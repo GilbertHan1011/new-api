@@ -17,7 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   Button,
   Card,
@@ -31,6 +31,7 @@ import {
 } from '@douyinfe/semi-ui';
 import { API, showError } from '../../helpers';
 import { Link, useParams } from 'react-router-dom';
+import { getUserIdFromLocalStorage } from '../../helpers/utils';
 
 const CommunityPostDetail = () => {
   const { id } = useParams();
@@ -43,6 +44,11 @@ const CommunityPostDetail = () => {
   const [comments, setComments] = useState([]);
   const [formApi, setFormApi] = useState(null);
   const [tipFormApi, setTipFormApi] = useState(null);
+  const currentUserId = Number(getUserIdFromLocalStorage());
+
+  const isOwner = useMemo(() => {
+    return Number(post?.user_id) > 0 && Number(post?.user_id) === currentUserId;
+  }, [post, currentUserId]);
 
   const loadPost = async () => {
     setLoading(true);
@@ -207,6 +213,7 @@ const CommunityPostDetail = () => {
                   分类：{post.category} · 作者：
                   {post.display_name || post.username || `User ${post.user_id}`} · 状态：
                   {post.status}
+                  {isOwner ? ' · 你的帖子' : ''}
                 </Typography.Text>
                 {post.category === 'showcase' && (
                   <Typography.Text type='tertiary'>
@@ -218,18 +225,27 @@ const CommunityPostDetail = () => {
                     悬赏额度：{post.reward_amount || 0} · 已支付：{post.reward_paid_amount || 0}
                   </Typography.Text>
                 )}
+                {post.category === 'bounty' && post.status === 'resolved' && (
+                  <Typography.Text type='success'>该悬赏已完成，奖励已发放。</Typography.Text>
+                )}
+                {post.category === 'bounty' && post.status === 'cancelled' && (
+                  <Typography.Text type='warning'>该悬赏已取消，额度已退回。</Typography.Text>
+                )}
                 <Typography.Paragraph
                   style={{ marginBottom: 0, whiteSpace: 'pre-wrap' }}
                 >
                   {post.content}
                 </Typography.Paragraph>
                 <Space>
-                  {post.category === 'showcase' && (
+                  {post.category === 'showcase' && !isOwner && (
                     <Button type='primary' theme='solid' onClick={() => setTipVisible(true)}>
                       打赏
                     </Button>
                   )}
-                  {post.category === 'bounty' && post.status === 'active' && (
+                  {post.category === 'showcase' && isOwner && (
+                    <Typography.Text type='tertiary'>不能给自己的帖子打赏</Typography.Text>
+                  )}
+                  {post.category === 'bounty' && post.status === 'active' && isOwner && (
                     <Button
                       type='danger'
                       theme='outline'
@@ -275,7 +291,7 @@ const CommunityPostDetail = () => {
                         <Typography.Paragraph style={{ marginBottom: 0 }}>
                           {comment.content}
                         </Typography.Paragraph>
-                        {post.category === 'bounty' && post.status === 'active' && !comment.is_selected && (
+                        {post.category === 'bounty' && post.status === 'active' && isOwner && !comment.is_selected && Number(comment.user_id) !== currentUserId && (
                           <Button
                             size='small'
                             type='primary'

@@ -32,6 +32,7 @@ import {
 } from '@douyinfe/semi-ui';
 import { API, showError } from '../../helpers';
 import { Link } from 'react-router-dom';
+import { getUserIdFromLocalStorage } from '../../helpers/utils';
 
 const CATEGORY_OPTIONS = [
   { key: 'discussion', label: '讨论区' },
@@ -46,6 +47,7 @@ const Community = () => {
   const [posts, setPosts] = useState([]);
   const [createVisible, setCreateVisible] = useState(false);
   const [formApi, setFormApi] = useState(null);
+  const currentUserId = Number(getUserIdFromLocalStorage());
 
   const currentCategoryLabel = useMemo(() => {
     return (
@@ -82,13 +84,19 @@ const Community = () => {
       return;
     }
 
+    const rewardAmount = Number(values.reward_amount || 0);
+    if (activeKey === 'bounty' && rewardAmount <= 0) {
+      Toast.error('悬赏帖必须填写大于 0 的悬赏额度');
+      return;
+    }
+
     setSubmitting(true);
     try {
       const res = await API.post('/api/community/posts', {
         category: activeKey,
         title: values.title,
         content: values.content,
-        reward_amount: activeKey === 'bounty' ? Number(values.reward_amount || 0) : 0,
+        reward_amount: activeKey === 'bounty' ? rewardAmount : 0,
       });
       const { success, message } = res.data;
       if (!success) {
@@ -119,7 +127,7 @@ const Community = () => {
               社区
             </Typography.Title>
             <Typography.Text type='tertiary'>
-              Phase 1：已接入真实帖子列表与发帖基础链路。
+              Phase 1：讨论区、夸夸区、悬赏区核心链路已接通。
             </Typography.Text>
           </div>
           <Button theme='solid' type='primary' onClick={() => setCreateVisible(true)}>
@@ -143,7 +151,7 @@ const Community = () => {
               <Empty
                 image={Empty.PRESENTED_IMAGE_SIMPLE}
                 title={`暂无${currentCategoryLabel}帖子`}
-                description='现在可以先发 discussion / showcase / bounty 的基础帖子了。'
+                description='现在可以发讨论、夸夸、悬赏三类帖子。'
               />
             ) : (
               <Space vertical spacing='medium' className='w-full'>
@@ -160,6 +168,17 @@ const Community = () => {
                             {post.display_name || post.username || `User ${post.user_id}`} · 状态：
                             {post.status || 'active'}
                           </Typography.Text>
+                          {post.category === 'showcase' && (
+                            <Typography.Text type='tertiary'>
+                              累计打赏：{post.tip_total_amount || 0}
+                            </Typography.Text>
+                          )}
+                          {post.category === 'bounty' && (
+                            <Typography.Text type='tertiary'>
+                              悬赏额度：{post.reward_amount || 0}
+                              {Number(post.user_id) === currentUserId ? ' · 你的帖子' : ''}
+                            </Typography.Text>
+                          )}
                         </div>
                       </div>
                       <Typography.Paragraph style={{ marginBottom: 0 }}>
@@ -186,7 +205,12 @@ const Community = () => {
           <Form.Input field='title' label='标题' placeholder='输入帖子标题' />
           <Form.TextArea field='content' label='内容' placeholder='输入帖子内容' rows={8} />
           {activeKey === 'bounty' && (
-            <Form.InputNumber field='reward_amount' label='悬赏额度' min={0} />
+            <Form.InputNumber
+              field='reward_amount'
+              label='悬赏额度'
+              min={1}
+              extraText='悬赏帖创建后会立即冻结这部分额度，采纳时发给被采纳者，取消时退回。'
+            />
           )}
         </Form>
       </Modal>
