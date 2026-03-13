@@ -18,10 +18,20 @@ For commercial licensing, please contact support@quantumnous.com
 */
 
 import React, { useEffect, useMemo, useState } from 'react';
-import { Button, Card, Empty, Space, Spin, Tabs, Typography } from '@douyinfe/semi-ui';
+import {
+  Button,
+  Card,
+  Empty,
+  Form,
+  Modal,
+  Space,
+  Spin,
+  Tabs,
+  Toast,
+  Typography,
+} from '@douyinfe/semi-ui';
 import { API, showError } from '../../helpers';
 import { Link } from 'react-router-dom';
-import { useTranslation } from 'react-i18next';
 
 const CATEGORY_OPTIONS = [
   { key: 'discussion', label: '讨论区' },
@@ -30,13 +40,17 @@ const CATEGORY_OPTIONS = [
 ];
 
 const Community = () => {
-  const { t } = useTranslation();
   const [activeKey, setActiveKey] = useState('discussion');
   const [loading, setLoading] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
   const [posts, setPosts] = useState([]);
+  const [createVisible, setCreateVisible] = useState(false);
+  const [formApi, setFormApi] = useState(null);
 
   const currentCategoryLabel = useMemo(() => {
-    return CATEGORY_OPTIONS.find((item) => item.key === activeKey)?.label || '讨论区';
+    return (
+      CATEGORY_OPTIONS.find((item) => item.key === activeKey)?.label || '讨论区'
+    );
   }, [activeKey]);
 
   const loadPosts = async (category) => {
@@ -60,6 +74,38 @@ const Community = () => {
     }
   };
 
+  const handleCreatePost = async () => {
+    if (!formApi) return;
+    const values = formApi.getValues();
+    if (!values.title?.trim() || !values.content?.trim()) {
+      Toast.error('标题和内容不能为空');
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      const res = await API.post('/api/community/posts', {
+        category: activeKey,
+        title: values.title,
+        content: values.content,
+        reward_amount: activeKey === 'bounty' ? Number(values.reward_amount || 0) : 0,
+      });
+      const { success, message } = res.data;
+      if (!success) {
+        showError(message);
+        return;
+      }
+      Toast.success('帖子已创建');
+      setCreateVisible(false);
+      formApi.reset();
+      await loadPosts(activeKey);
+    } catch (error) {
+      console.error(error);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   useEffect(() => {
     loadPosts(activeKey);
   }, [activeKey]);
@@ -73,11 +119,11 @@ const Community = () => {
               社区
             </Typography.Title>
             <Typography.Text type='tertiary'>
-              Phase 1 skeleton：讨论、夸夸、悬赏三类帖子入口已接通。
+              Phase 1：已接入真实帖子列表与发帖基础链路。
             </Typography.Text>
           </div>
-          <Button theme='solid' type='primary' disabled>
-            发帖（即将接入）
+          <Button theme='solid' type='primary' onClick={() => setCreateVisible(true)}>
+            发帖
           </Button>
         </div>
 
@@ -97,7 +143,7 @@ const Community = () => {
               <Empty
                 image={Empty.PRESENTED_IMAGE_SIMPLE}
                 title={`暂无${currentCategoryLabel}帖子`}
-                description='Phase 1 骨架已完成，接下来会逐步接入真实发帖/评论/打赏/悬赏逻辑。'
+                description='现在可以先发 discussion / showcase / bounty 的基础帖子了。'
               />
             ) : (
               <Space vertical spacing='medium' className='w-full'>
@@ -110,7 +156,9 @@ const Community = () => {
                             <Link to={`/community/${post.id}`}>{post.title}</Link>
                           </Typography.Title>
                           <Typography.Text type='tertiary'>
-                            分类：{currentCategoryLabel} · 状态：{post.status || 'active'}
+                            分类：{currentCategoryLabel} · 作者：
+                            {post.display_name || post.username || `User ${post.user_id}`} · 状态：
+                            {post.status || 'active'}
                           </Typography.Text>
                         </div>
                       </div>
@@ -125,6 +173,23 @@ const Community = () => {
           </div>
         </Card>
       </Space>
+
+      <Modal
+        title={`发${currentCategoryLabel}帖子`}
+        visible={createVisible}
+        onCancel={() => setCreateVisible(false)}
+        onOk={handleCreatePost}
+        okText='发布'
+        confirmLoading={submitting}
+      >
+        <Form getFormApi={(api) => setFormApi(api)}>
+          <Form.Input field='title' label='标题' placeholder='输入帖子标题' />
+          <Form.TextArea field='content' label='内容' placeholder='输入帖子内容' rows={8} />
+          {activeKey === 'bounty' && (
+            <Form.InputNumber field='reward_amount' label='悬赏额度' min={0} />
+          )}
+        </Form>
+      </Modal>
     </div>
   );
 };

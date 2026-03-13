@@ -41,3 +41,20 @@ func (e *CommunityBountyEscrow) BeforeUpdate(tx *gorm.DB) error {
 	e.UpdatedAt = common.GetTimestamp()
 	return nil
 }
+
+func CreateCommunityBountyEscrow(tx *gorm.DB, escrow *CommunityBountyEscrow) error {
+	useDB := DB
+	if tx != nil {
+		useDB = tx
+	}
+	return useDB.Create(escrow).Error
+}
+
+func GetCommunityBountyEscrowByPostId(postId int) (*CommunityBountyEscrow, error) {
+	var escrow CommunityBountyEscrow
+	err := DB.Where("post_id = ?", postId).First(&escrow).Error
+	if err != nil {
+		return nil, err
+	}
+	return &escrow, nil
+}

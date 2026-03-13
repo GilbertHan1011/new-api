@@ -1,8 +1,9 @@
 package model
 
+import "gorm.io/gorm"
+
 import (
 	"github.com/QuantumNous/new-api/common"
-	"gorm.io/gorm"
 )
 
 const (
@@ -23,6 +24,12 @@ type CommunityComment struct {
 	UpdatedAt  int64  `json:"updated_at" gorm:"bigint"`
 }
 
+type CommunityCommentWithAuthor struct {
+	CommunityComment
+	Username    string `json:"username"`
+	DisplayName string `json:"display_name"`
+}
+
 func (c *CommunityComment) BeforeCreate(tx *gorm.DB) error {
 	now := common.GetTimestamp()
 	if c.CreatedAt == 0 {
@@ -40,4 +47,37 @@ func (c *CommunityComment) BeforeCreate(tx *gorm.DB) error {
 func (c *CommunityComment) BeforeUpdate(tx *gorm.DB) error {
 	c.UpdatedAt = common.GetTimestamp()
 	return nil
+}
+
+func CreateCommunityComment(comment *CommunityComment) error {
+	return DB.Create(comment).Error
+}
+
+func ListCommunityCommentsByPostId(postId int) ([]*CommunityCommentWithAuthor, error) {
+	var comments []*CommunityComment
+	if err := DB.Where("post_id = ? AND status <> ?", postId, CommunityCommentStatusHidden).Order("id asc").Find(&comments).Error; err != nil {
+		return nil, err
+	}
+
+	result := make([]*CommunityCommentWithAuthor, 0, len(comments))
+	for _, comment := range comments {
+		user, err := GetUserById(comment.UserId, false)
+		if err != nil {
+			continue
+		}
+		result = append(result, &CommunityCommentWithAuthor{
+			CommunityComment: *comment,
+			Username:         user.Username,
+			DisplayName:      user.DisplayName,
+		})
+	}
+	return result, nil
+}
+
+func GetCommunityCommentById(id int) (*CommunityComment, error) {
+	var comment CommunityComment
+	if err := DB.First(&comment, "id = ?", id).Error; err != nil {
+		return nil, err
+	}
+	return &comment, nil
 }

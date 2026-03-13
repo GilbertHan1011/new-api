@@ -37,3 +37,11 @@ func (t *CommunityRewardTransaction) BeforeCreate(tx *gorm.DB) error {
 	}
 	return nil
 }
+
+func CreateCommunityRewardTransaction(tx *gorm.DB, reward *CommunityRewardTransaction) error {
+	useDB := DB
+	if tx != nil {
+		useDB = tx
+	}
+	return useDB.Create(reward).Error
+}

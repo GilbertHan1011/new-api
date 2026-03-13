@@ -1,12 +1,16 @@
 package controller
 
 import (
+	"errors"
 	"strconv"
+	"strings"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/service"
 
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 )
 
 type CommunityPostCreateRequest struct {
@@ -30,30 +34,20 @@ type CommunitySelectCommentRequest struct {
 }
 
 func ListCommunityPosts(c *gin.Context) {
-	category := c.Query("category")
-	if category == "" {
-		category = model.CommunityCategoryDiscussion
-	}
+	category := strings.TrimSpace(c.Query("category"))
+	pageInfo := common.GetPageQuery(c)
 
-	posts := []gin.H{
-		{
-			"id":               1,
-			"category":         category,
-			"title":            "Community Phase 1 skeleton",
-			"content":          "Community module skeleton is now wired into backend and frontend.",
-			"status":           model.CommunityPostStatusActive,
-			"reward_amount":    0,
-			"tip_total_amount": 0,
-			"comment_count":    0,
-			"created_at":       common.GetTimestamp(),
-		},
+	posts, total, err := model.ListCommunityPosts(category, pageInfo)
+	if err != nil {
+		common.ApiError(c, err)
+		return
 	}
 	common.ApiSuccess(c, gin.H{
 		"items": posts,
 		"pagination": gin.H{
-			"page":      1,
-			"page_size": 20,
-			"total":     len(posts),
+			"page":      pageInfo.Page,
+			"page_size": pageInfo.PageSize,
+			"total":     total,
 		},
 	})
 }
@@ -64,22 +58,32 @@ func GetCommunityPost(c *gin.Context) {
 		common.ApiErrorMsg(c, "invalid post id")
 		return
 	}
-	common.ApiSuccess(c, gin.H{
-		"id":               id,
-		"category":         model.CommunityCategoryDiscussion,
-		"title":            "Community Phase 1 skeleton",
-		"content":          "This is a placeholder post detail returned by the Phase 1 skeleton endpoint.",
-		"status":           model.CommunityPostStatusActive,
-		"reward_amount":    0,
-		"tip_total_amount": 0,
-		"comment_count":    0,
-		"created_at":       common.GetTimestamp(),
-	})
+	post, err := model.GetCommunityPostDetailById(id)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			common.ApiErrorMsg(c, "community post not found")
+			return
+		}
+		common.ApiError(c, err)
+		return
+	}
+	_ = model.IncreaseCommunityPostViewCount(id)
+	common.ApiSuccess(c, post)
 }
 
 func ListCommunityComments(c *gin.Context) {
+	postId, _ := strconv.Atoi(c.Param("id"))
+	if postId <= 0 {
+		common.ApiErrorMsg(c, "invalid post id")
+		return
+	}
+	comments, err := model.ListCommunityCommentsByPostId(postId)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
 	common.ApiSuccess(c, gin.H{
-		"items": []gin.H{},
+		"items": comments,
 	})
 }
 
@@ -89,57 +93,160 @@ func CreateCommunityPost(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
+
+	req.Category = strings.TrimSpace(req.Category)
+	if req.Category == "" {
+		req.Category = model.CommunityCategoryDiscussion
+	}
+	if err := model.ValidateCommunityCategory(req.Category); err != nil {
+		common.ApiError(c, err)
+		return
+	}
+
+	if strings.TrimSpace(req.Title) == "" || strings.TrimSpace(req.Content) == "" {
+		common.ApiErrorMsg(c, "title and content are required")
+		return
+	}
+
+	if req.Category != model.CommunityCategoryBounty {
+		req.RewardAmount = 0
+	}
+
+	post := &model.CommunityPost{
+		UserId:       c.GetInt("id"),
+		Category:     req.Category,
+		Title:        strings.TrimSpace(req.Title),
+		Content:      strings.TrimSpace(req.Content),
+		RewardAmount: req.RewardAmount,
+		Status:       model.CommunityPostStatusActive,
+	}
+	if err := service.CreateCommunityPostWithBusinessRules(post); err != nil {
+		common.ApiError(c, err)
+		return
+	}
+
 	common.ApiSuccess(c, gin.H{
-		"message": "community create post skeleton ready",
-		"post":    req,
+		"id":      post.Id,
+		"message": "community post created",
 	})
 }
 
 func CreateCommunityComment(c *gin.Context) {
+	postId, _ := strconv.Atoi(c.Param("id"))
+	if postId <= 0 {
+		common.ApiErrorMsg(c, "invalid post id")
+		return
+	}
+
+	if _, err := model.GetCommunityPostById(postId); err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			common.ApiErrorMsg(c, "community post not found")
+			return
+		}
+		common.ApiError(c, err)
+		return
+	}
+
 	var req CommunityCommentCreateRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		common.ApiError(c, err)
 		return
 	}
+	if strings.TrimSpace(req.Content) == "" {
+		common.ApiErrorMsg(c, "comment content is required")
+		return
+	}
+
+	comment := &model.CommunityComment{
+		PostId:   postId,
+		UserId:   c.GetInt("id"),
+		ParentId: req.ParentId,
+		Content:  strings.TrimSpace(req.Content),
+	}
+	if err := model.CreateCommunityComment(comment); err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	_ = model.IncreaseCommunityPostCommentCount(postId)
+
 	common.ApiSuccess(c, gin.H{
-		"message": "community create comment skeleton ready",
-		"comment": req,
+		"id":      comment.Id,
+		"message": "community comment created",
 	})
 }
 
 func TipCommunityPost(c *gin.Context) {
+	postId, _ := strconv.Atoi(c.Param("id"))
+	if postId <= 0 {
+		common.ApiErrorMsg(c, "invalid post id")
+		return
+	}
+
 	var req CommunityTipRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		common.ApiError(c, err)
 		return
 	}
+	if err := service.TipCommunityShowcasePost(postId, c.GetInt("id"), req.Amount); err != nil {
+		common.ApiError(c, err)
+		return
+	}
+
+	model.RecordLog(c.GetInt("id"), model.LogTypeTopup, "community tip sent")
 	common.ApiSuccess(c, gin.H{
-		"message": "community tip skeleton ready",
-		"tip":     req,
+		"message": "community tip success",
 	})
 }
 
 func SelectCommunityBountyComment(c *gin.Context) {
+	postId, _ := strconv.Atoi(c.Param("id"))
+	if postId <= 0 {
+		common.ApiErrorMsg(c, "invalid post id")
+		return
+	}
 	var req CommunitySelectCommentRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		common.ApiError(c, err)
 		return
 	}
+	if err := service.SelectCommunityBountyComment(postId, c.GetInt("id"), req.CommentId); err != nil {
+		common.ApiError(c, err)
+		return
+	}
 	common.ApiSuccess(c, gin.H{
-		"message": "community bounty select skeleton ready",
-		"select":  req,
+		"message": "community bounty selected",
 	})
 }
 
 func CancelCommunityBounty(c *gin.Context) {
+	postId, _ := strconv.Atoi(c.Param("id"))
+	if postId <= 0 {
+		common.ApiErrorMsg(c, "invalid post id")
+		return
+	}
+	if err := service.CancelCommunityBounty(postId, c.GetInt("id")); err != nil {
+		common.ApiError(c, err)
+		return
+	}
 	common.ApiSuccess(c, gin.H{
-		"message": "community bounty cancel skeleton ready",
+		"message": "community bounty cancelled",
 	})
 }
 
 func AdminListCommunityPosts(c *gin.Context) {
+	pageInfo := common.GetPageQuery(c)
+	posts, total, err := model.ListCommunityPosts(strings.TrimSpace(c.Query("category")), pageInfo)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
 	common.ApiSuccess(c, gin.H{
-		"items": []gin.H{},
+		"items": posts,
+		"pagination": gin.H{
+			"page":      pageInfo.Page,
+			"page_size": pageInfo.PageSize,
+			"total":     total,
+		},
 	})
 }
 
