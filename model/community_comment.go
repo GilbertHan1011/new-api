@@ -1,9 +1,8 @@
 package model
 
-import "gorm.io/gorm"
-
 import (
 	"github.com/QuantumNous/new-api/common"
+	"gorm.io/gorm"
 )
 
 const (
@@ -80,4 +79,8 @@ func GetCommunityCommentById(id int) (*CommunityComment, error) {
 		return nil, err
 	}
 	return &comment, nil
+}
+
+func UpdateCommunityCommentStatus(commentId int, status string) error {
+	return DB.Model(&CommunityComment{}).Where("id = ?", commentId).Update("status", status).Error
 }

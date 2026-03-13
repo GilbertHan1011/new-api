@@ -138,12 +138,17 @@ func CreateCommunityComment(c *gin.Context) {
 		return
 	}
 
-	if _, err := model.GetCommunityPostById(postId); err != nil {
+	post, err := model.GetCommunityPostById(postId)
+	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			common.ApiErrorMsg(c, "community post not found")
 			return
 		}
 		common.ApiError(c, err)
+		return
+	}
+	if post.Status == model.CommunityPostStatusLocked || post.Status == model.CommunityPostStatusHidden {
+		common.ApiErrorMsg(c, "post is not open for comments")
 		return
 	}
 
@@ -155,6 +160,17 @@ func CreateCommunityComment(c *gin.Context) {
 	if strings.TrimSpace(req.Content) == "" {
 		common.ApiErrorMsg(c, "comment content is required")
 		return
+	}
+	if req.ParentId > 0 {
+		parent, err := model.GetCommunityCommentById(req.ParentId)
+		if err != nil {
+			common.ApiErrorMsg(c, "parent comment not found")
+			return
+		}
+		if parent.PostId != postId {
+			common.ApiErrorMsg(c, "parent comment does not belong to this post")
+			return
+		}
 	}
 
 	comment := &model.CommunityComment{
@@ -251,19 +267,46 @@ func AdminListCommunityPosts(c *gin.Context) {
 }
 
 func AdminHideCommunityPost(c *gin.Context) {
+	postId, _ := strconv.Atoi(c.Param("id"))
+	if postId <= 0 {
+		common.ApiErrorMsg(c, "invalid post id")
+		return
+	}
+	if err := model.UpdateCommunityPostStatus(postId, model.CommunityPostStatusHidden); err != nil {
+		common.ApiError(c, err)
+		return
+	}
 	common.ApiSuccess(c, gin.H{
-		"message": "community admin hide post skeleton ready",
+		"message": "community post hidden",
 	})
 }
 
 func AdminLockCommunityPost(c *gin.Context) {
+	postId, _ := strconv.Atoi(c.Param("id"))
+	if postId <= 0 {
+		common.ApiErrorMsg(c, "invalid post id")
+		return
+	}
+	if err := model.UpdateCommunityPostStatus(postId, model.CommunityPostStatusLocked); err != nil {
+		common.ApiError(c, err)
+		return
+	}
 	common.ApiSuccess(c, gin.H{
-		"message": "community admin lock post skeleton ready",
+		"message": "community post locked",
 	})
 }
 
 func AdminHideCommunityComment(c *gin.Context) {
+	commentId, _ := strconv.Atoi(c.Param("id"))
+	if commentId <= 0 {
+		common.ApiErrorMsg(c, "invalid comment id")
+		return
+	}
+	if err := model.UpdateCommunityCommentStatus(commentId, model.CommunityCommentStatusHidden); err != nil {
+		common.ApiError(c, err)
+		return
+	}
 	common.ApiSuccess(c, gin.H{
-		"message": "community admin hide comment skeleton ready",
+		"message": "community comment hidden",
 	})
 }

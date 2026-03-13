@@ -142,6 +142,10 @@ func IncreaseCommunityPostTipStats(tx *gorm.DB, postId int, amount int) error {
 	}).Error
 }
 
+func UpdateCommunityPostStatus(postId int, status string) error {
+	return DB.Model(&CommunityPost{}).Where("id = ?", postId).Update("status", status).Error
+}
+
 func ValidateCommunityCategory(category string) error {
 	switch category {
 	case CommunityCategoryDiscussion, CommunityCategoryShowcase, CommunityCategoryBounty:
