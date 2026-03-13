@@ -255,6 +255,32 @@ func SetApiRouter(router *gin.Engine) {
 			tokenRoute.POST("/batch", controller.DeleteTokenBatch)
 		}
 
+		communityRoute := apiRouter.Group("/community")
+		{
+			communityRoute.GET("/posts", controller.ListCommunityPosts)
+			communityRoute.GET("/posts/:id", controller.GetCommunityPost)
+			communityRoute.GET("/posts/:id/comments", controller.ListCommunityComments)
+
+			communityAuthedRoute := communityRoute.Group("/")
+			communityAuthedRoute.Use(middleware.UserAuth())
+			{
+				communityAuthedRoute.POST("/posts", controller.CreateCommunityPost)
+				communityAuthedRoute.POST("/posts/:id/comments", controller.CreateCommunityComment)
+				communityAuthedRoute.POST("/posts/:id/tip", controller.TipCommunityPost)
+				communityAuthedRoute.POST("/posts/:id/select-comment", controller.SelectCommunityBountyComment)
+				communityAuthedRoute.POST("/posts/:id/cancel-bounty", controller.CancelCommunityBounty)
+			}
+
+			communityAdminRoute := communityRoute.Group("/admin")
+			communityAdminRoute.Use(middleware.AdminAuth())
+			{
+				communityAdminRoute.GET("/posts", controller.AdminListCommunityPosts)
+				communityAdminRoute.POST("/posts/:id/hide", controller.AdminHideCommunityPost)
+				communityAdminRoute.POST("/posts/:id/lock", controller.AdminLockCommunityPost)
+				communityAdminRoute.POST("/comments/:id/hide", controller.AdminHideCommunityComment)
+			}
+		}
+
 		usageRoute := apiRouter.Group("/usage")
 		usageRoute.Use(middleware.CORS(), middleware.CriticalRateLimit())
 		{

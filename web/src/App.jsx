@@ -48,6 +48,8 @@ import Subscription from './pages/Subscription';
 import OAuth2Callback from './components/auth/OAuth2Callback';
 import PersonalSetting from './components/settings/PersonalSetting';
 import Setup from './pages/Setup';
+import Community from './pages/Community';
+import CommunityPostDetail from './pages/Community/PostDetail';
 import SetupCheck from './components/layout/SetupCheck';
 
 const Home = lazy(() => import('./pages/Home'));
@@ -332,6 +334,22 @@ function App() {
                 <Pricing />
               </Suspense>
             )
+          }
+        />
+        <Route
+          path='/community'
+          element={
+            <Suspense fallback={<Loading></Loading>} key={location.pathname}>
+              <Community />
+            </Suspense>
+          }
+        />
+        <Route
+          path='/community/:id'
+          element={
+            <Suspense fallback={<Loading></Loading>} key={location.pathname}>
+              <CommunityPostDetail />
+            </Suspense>
           }
         />
         <Route

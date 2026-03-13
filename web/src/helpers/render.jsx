@@ -75,6 +75,7 @@ import {
   Package,
   Server,
   CalendarClock,
+  Users,
 } from 'lucide-react';
 import {
   SiAtlassian,
@@ -122,6 +123,8 @@ export function getLucideIcon(key, selected = false) {
       return <TerminalSquare {...commonProps} color={iconColor} />;
     case 'chat':
       return <MessageSquare {...commonProps} color={iconColor} />;
+    case 'community':
+      return <Users {...commonProps} color={iconColor} />;
     case 'token':
       return <Key {...commonProps} color={iconColor} />;
     case 'log':

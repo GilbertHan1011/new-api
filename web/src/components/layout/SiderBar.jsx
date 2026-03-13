@@ -44,6 +44,7 @@ const routerMap = {
   about: '/about',
   detail: '/console',
   pricing: '/pricing',
+  community: '/community',
   task: '/console/task',
   models: '/console/models',
   deployment: '/console/deployment',
@@ -202,6 +203,11 @@ const SiderBar = ({ onNavigate = () => {} }) => {
 
   const chatMenuItems = useMemo(() => {
     const items = [
+      {
+        text: t('社区'),
+        itemKey: 'community',
+        to: '/community',
+      },
       {
         text: t('操练场'),
         itemKey: 'playground',
