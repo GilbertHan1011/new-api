@@ -225,6 +225,33 @@ const CommunityPostDetail = () => {
     }
   };
 
+  const handleDelete = () => {
+    Modal.confirm({
+      title: '确认删除帖子',
+      content: '删除后帖子将被隐藏，其他用户将无法查看。此操作不可撤销，确定要删除吗？',
+      okText: '确认删除',
+      cancelText: '取消',
+      okType: 'danger',
+      okButtonProps: { style: { marginLeft: 12 } },
+      onOk: async () => {
+        setActionSubmitting(true);
+        try {
+          const res = await API.delete(`/api/community/posts/${id}`);
+          if (!res.data?.success) {
+            showError(res.data?.message);
+            return;
+          }
+          Toast.success('帖子已删除');
+          navigate(`/community?category=${post.category}`);
+        } catch (error) {
+          console.error(error);
+        } finally {
+          setActionSubmitting(false);
+        }
+      },
+    });
+  };
+
   const handleCommentPaste = async (e) => {
     const items = e.clipboardData?.items;
     if (!items) return;
@@ -281,6 +308,9 @@ const CommunityPostDetail = () => {
               <Tag color={cat.color} size='small'>
                 {cat.label}
               </Tag>
+              {post.is_pinned && (
+                <Tag color='red' size='small'>置顶</Tag>
+              )}
               <Typography.Text type='tertiary' style={{ fontSize: 12 }}>
                 {relTime}
               </Typography.Text>
@@ -331,16 +361,11 @@ const CommunityPostDetail = () => {
             <MarkdownRenderer content={post.content || ''} />
 
             {/* Action buttons */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4, flexWrap: 'wrap' }}>
               {post.category === 'showcase' && !isOwner && (
                 <Button type='primary' theme='solid' onClick={() => setTipVisible(true)}>
                   打赏
                 </Button>
-              )}
-              {post.category === 'showcase' && isOwner && (
-                <Typography.Text type='tertiary' style={{ fontSize: 12 }}>
-                  这是你的帖子
-                </Typography.Text>
               )}
               {post.category === 'bounty' && post.status === 'active' && isOwner && (
                 <Button
@@ -353,12 +378,35 @@ const CommunityPostDetail = () => {
                 </Button>
               )}
               {isAdmin() && (
+                <>
+                  <Button
+                    type='tertiary'
+                    onClick={handleTogglePin}
+                    loading={actionSubmitting}
+                    size='small'
+                  >
+                    {post.is_pinned ? '取消置顶' : '置顶'}
+                  </Button>
+                  <Button
+                    type='danger'
+                    theme='borderless'
+                    onClick={handleDelete}
+                    loading={actionSubmitting}
+                    size='small'
+                  >
+                    删除
+                  </Button>
+                </>
+              )}
+              {!isAdmin() && isOwner && (
                 <Button
-                  type='tertiary'
-                  onClick={handleTogglePin}
+                  type='danger'
+                  theme='borderless'
+                  onClick={handleDelete}
                   loading={actionSubmitting}
+                  size='small'
                 >
-                  {post.is_pinned ? '取消置顶' : '置顶'}
+                  删除
                 </Button>
               )}
             </div>

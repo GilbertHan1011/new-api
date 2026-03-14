@@ -267,6 +267,7 @@ func SetApiRouter(router *gin.Engine) {
 			communityAuthedRoute.Use(middleware.UserAuth())
 			{
 				communityAuthedRoute.POST("/posts", controller.CreateCommunityPost)
+				communityAuthedRoute.DELETE("/posts/:id", controller.DeleteCommunityPost)
 				communityAuthedRoute.POST("/posts/:id/comments", controller.CreateCommunityComment)
 				communityAuthedRoute.POST("/posts/:id/tip", controller.TipCommunityPost)
 				communityAuthedRoute.POST("/posts/:id/select-comment", controller.SelectCommunityBountyComment)

@@ -471,6 +471,30 @@ func AdminPinCommunityPost(c *gin.Context) {
 	common.ApiSuccess(c, gin.H{"message": "post pinned status updated"})
 }
 
+func DeleteCommunityPost(c *gin.Context) {
+	postId, _ := strconv.Atoi(c.Param("id"))
+	if postId <= 0 {
+		common.ApiErrorMsg(c, "invalid post id")
+		return
+	}
+	post, err := model.GetCommunityPostById(postId)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	userId := c.GetInt("id")
+	userRole := c.GetInt("role")
+	if post.UserId != userId && userRole < common.RoleAdminUser {
+		common.ApiErrorMsg(c, "permission denied")
+		return
+	}
+	if err := model.UpdateCommunityPostStatus(postId, model.CommunityPostStatusHidden); err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, gin.H{"message": "post deleted"})
+}
+
 // --- Reward history ---
 
 func ListCommunityRewards(c *gin.Context) {

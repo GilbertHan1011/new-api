@@ -36,7 +36,7 @@ import {
 import MDEditor from '@uiw/react-md-editor';
 import { API, showError } from '../../helpers';
 import { uploadImage } from '../../helpers/imageUpload';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { getUserIdFromLocalStorage, getRelativeTime } from '../../helpers/utils';
 import { stringToColor, renderQuota } from '../../helpers/render';
 import { displayAmountToQuota } from '../../helpers/quota';
@@ -70,7 +70,8 @@ const PAGE_SIZE = 20;
 
 const Community = () => {
   const navigate = useNavigate();
-  const [activeKey, setActiveKey] = useState('discussion');
+  const [searchParams] = useSearchParams();
+  const [activeKey, setActiveKey] = useState(searchParams.get('category') || 'discussion');
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [posts, setPosts] = useState([]);
@@ -215,6 +216,13 @@ const Community = () => {
   }, []);
 
   useEffect(() => {
+    const category = searchParams.get('category');
+    if (category && category !== activeKey) {
+      setActiveKey(category);
+    }
+  }, [searchParams]);
+
+  useEffect(() => {
     loadPosts(activeKey, 1, selectedTagId);
   }, [activeKey]);
 
@@ -266,6 +274,9 @@ const Community = () => {
               <Tag color='violet' size='small' type='light'>
                 已收打赏 {renderQuota(post.tip_total_amount)}
               </Tag>
+            )}
+            {post.is_pinned && (
+              <Tag color='red' size='small'>置顶</Tag>
             )}
             <Typography.Text type='tertiary' style={{ fontSize: 12 }}>
               {relTime}
