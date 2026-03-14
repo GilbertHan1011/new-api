@@ -45,3 +45,95 @@ func CreateCommunityRewardTransaction(tx *gorm.DB, reward *CommunityRewardTransa
 	}
 	return useDB.Create(reward).Error
 }
+
+type CommunityRewardTransactionWithInfo struct {
+	CommunityRewardTransaction
+	FromUsername    string `json:"from_username"`
+	FromDisplayName string `json:"from_display_name"`
+	ToUsername      string `json:"to_username"`
+	ToDisplayName   string `json:"to_display_name"`
+	PostTitle       string `json:"post_title"`
+}
+
+func ListCommunityRewardTransactions(userId int, pageInfo *common.PageInfo) ([]*CommunityRewardTransactionWithInfo, int64, error) {
+	var total int64
+	query := DB.Model(&CommunityRewardTransaction{}).Where("from_user_id = ? OR to_user_id = ?", userId, userId)
+	if err := query.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+
+	var txns []*CommunityRewardTransaction
+	if err := query.Order("id DESC").Limit(pageInfo.GetPageSize()).Offset(pageInfo.GetStartIdx()).Find(&txns).Error; err != nil {
+		return nil, 0, err
+	}
+
+	return enrichRewardTransactions(txns), total, nil
+}
+
+func ListAllCommunityRewardTransactions(pageInfo *common.PageInfo) ([]*CommunityRewardTransactionWithInfo, int64, error) {
+	var total int64
+	if err := DB.Model(&CommunityRewardTransaction{}).Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+
+	var txns []*CommunityRewardTransaction
+	if err := DB.Model(&CommunityRewardTransaction{}).Order("id DESC").Limit(pageInfo.GetPageSize()).Offset(pageInfo.GetStartIdx()).Find(&txns).Error; err != nil {
+		return nil, 0, err
+	}
+
+	return enrichRewardTransactions(txns), total, nil
+}
+
+func enrichRewardTransactions(txns []*CommunityRewardTransaction) []*CommunityRewardTransactionWithInfo {
+	userIds := make(map[int]bool)
+	postIds := make(map[int]bool)
+	for _, t := range txns {
+		if t.FromUserId > 0 {
+			userIds[t.FromUserId] = true
+		}
+		if t.ToUserId > 0 {
+			userIds[t.ToUserId] = true
+		}
+		if t.PostId > 0 {
+			postIds[t.PostId] = true
+		}
+	}
+
+	userMap := make(map[int]*User)
+	for uid := range userIds {
+		if u, err := GetUserById(uid, false); err == nil {
+			userMap[uid] = u
+		}
+	}
+
+	postMap := make(map[int]*CommunityPost)
+	if len(postIds) > 0 {
+		ids := make([]int, 0, len(postIds))
+		for pid := range postIds {
+			ids = append(ids, pid)
+		}
+		var posts []*CommunityPost
+		DB.Where("id IN ?", ids).Find(&posts)
+		for _, p := range posts {
+			postMap[p.Id] = p
+		}
+	}
+
+	result := make([]*CommunityRewardTransactionWithInfo, 0, len(txns))
+	for _, t := range txns {
+		info := &CommunityRewardTransactionWithInfo{CommunityRewardTransaction: *t}
+		if u, ok := userMap[t.FromUserId]; ok {
+			info.FromUsername = u.Username
+			info.FromDisplayName = u.DisplayName
+		}
+		if u, ok := userMap[t.ToUserId]; ok {
+			info.ToUsername = u.Username
+			info.ToDisplayName = u.DisplayName
+		}
+		if p, ok := postMap[t.PostId]; ok {
+			info.PostTitle = p.Title
+		}
+		result = append(result, info)
+	}
+	return result
+}

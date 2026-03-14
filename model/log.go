@@ -47,7 +47,8 @@ const (
 	LogTypeManage  = 3
 	LogTypeSystem  = 4
 	LogTypeError   = 5
-	LogTypeRefund  = 6
+	LogTypeRefund    = 6
+	LogTypeCommunity = 7
 )
 
 func formatUserLogs(logs []*Log, startIdx int) {

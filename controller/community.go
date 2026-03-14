@@ -2,6 +2,7 @@ package controller
 
 import (
 	"errors"
+	"fmt"
 	"strconv"
 	"strings"
 
@@ -18,6 +19,8 @@ type CommunityPostCreateRequest struct {
 	Title        string `json:"title"`
 	Content      string `json:"content"`
 	RewardAmount int    `json:"reward_amount"`
+	TagIds       []int  `json:"tag_ids"`
+	IsAnonymous  bool   `json:"is_anonymous"`
 }
 
 type CommunityCommentCreateRequest struct {
@@ -35,9 +38,10 @@ type CommunitySelectCommentRequest struct {
 
 func ListCommunityPosts(c *gin.Context) {
 	category := strings.TrimSpace(c.Query("category"))
+	tagId, _ := strconv.Atoi(c.Query("tag_id"))
 	pageInfo := common.GetPageQuery(c)
 
-	posts, total, err := model.ListCommunityPosts(category, pageInfo)
+	posts, total, err := model.ListCommunityPosts(category, tagId, pageInfo)
 	if err != nil {
 		common.ApiError(c, err)
 		return
@@ -108,6 +112,11 @@ func CreateCommunityPost(c *gin.Context) {
 		return
 	}
 
+	if len(req.TagIds) > 2 {
+		common.ApiErrorMsg(c, "at most 2 tags are allowed")
+		return
+	}
+
 	if req.Category != model.CommunityCategoryBounty {
 		req.RewardAmount = 0
 	}
@@ -119,10 +128,15 @@ func CreateCommunityPost(c *gin.Context) {
 		Content:      strings.TrimSpace(req.Content),
 		RewardAmount: req.RewardAmount,
 		Status:       model.CommunityPostStatusActive,
+		IsAnonymous:  req.IsAnonymous,
 	}
 	if err := service.CreateCommunityPostWithBusinessRules(post); err != nil {
 		common.ApiError(c, err)
 		return
+	}
+
+	if len(req.TagIds) > 0 {
+		_ = model.SetCommunityPostTags(nil, post.Id, req.TagIds)
 	}
 
 	common.ApiSuccess(c, gin.H{
@@ -185,6 +199,17 @@ func CreateCommunityComment(c *gin.Context) {
 	}
 	_ = model.IncreaseCommunityPostCommentCount(postId)
 
+	// Send notification to post owner
+	if post.UserId != c.GetInt("id") {
+		_ = model.CreateNotification(&model.Notification{
+			UserId:  post.UserId,
+			Type:    model.NotificationTypeComment,
+			Title:   "新评论",
+			Content: fmt.Sprintf("你的帖子《%s》收到了新评论", post.Title),
+			Link:    fmt.Sprintf("/community/%d", postId),
+		})
+	}
+
 	common.ApiSuccess(c, gin.H{
 		"id":      comment.Id,
 		"message": "community comment created",
@@ -208,7 +233,6 @@ func TipCommunityPost(c *gin.Context) {
 		return
 	}
 
-	model.RecordLog(c.GetInt("id"), model.LogTypeTopup, "community tip sent")
 	common.ApiSuccess(c, gin.H{
 		"message": "community tip success",
 	})
@@ -251,7 +275,8 @@ func CancelCommunityBounty(c *gin.Context) {
 
 func AdminListCommunityPosts(c *gin.Context) {
 	pageInfo := common.GetPageQuery(c)
-	posts, total, err := model.ListCommunityPosts(strings.TrimSpace(c.Query("category")), pageInfo)
+	tagId, _ := strconv.Atoi(c.Query("tag_id"))
+	posts, total, err := model.ListCommunityPosts(strings.TrimSpace(c.Query("category")), tagId, pageInfo)
 	if err != nil {
 		common.ApiError(c, err)
 		return
@@ -309,4 +334,223 @@ func AdminHideCommunityComment(c *gin.Context) {
 	common.ApiSuccess(c, gin.H{
 		"message": "community comment hidden",
 	})
+}
+
+// --- Tag management ---
+
+func ListCommunityTags(c *gin.Context) {
+	tags, err := model.ListCommunityTags(true)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, tags)
+}
+
+func AdminListCommunityTags(c *gin.Context) {
+	tags, err := model.ListCommunityTags(false)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, tags)
+}
+
+type CommunityTagRequest struct {
+	Name        string `json:"name"`
+	Color       string `json:"color"`
+	Description string `json:"description"`
+	Enabled     *bool  `json:"enabled"`
+	SortOrder   int    `json:"sort_order"`
+}
+
+func AdminCreateCommunityTag(c *gin.Context) {
+	var req CommunityTagRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	if strings.TrimSpace(req.Name) == "" {
+		common.ApiErrorMsg(c, "tag name is required")
+		return
+	}
+	tag := &model.CommunityTag{
+		Name:        strings.TrimSpace(req.Name),
+		Color:       req.Color,
+		Description: req.Description,
+		Enabled:     true,
+		SortOrder:   req.SortOrder,
+	}
+	if tag.Color == "" {
+		tag.Color = "blue"
+	}
+	if err := model.CreateCommunityTag(tag); err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, tag)
+}
+
+func AdminUpdateCommunityTag(c *gin.Context) {
+	id, _ := strconv.Atoi(c.Param("id"))
+	if id <= 0 {
+		common.ApiErrorMsg(c, "invalid tag id")
+		return
+	}
+	var req CommunityTagRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	updates := map[string]interface{}{
+		"name":        strings.TrimSpace(req.Name),
+		"color":       req.Color,
+		"description": req.Description,
+		"sort_order":  req.SortOrder,
+	}
+	if req.Enabled != nil {
+		updates["enabled"] = *req.Enabled
+	}
+	if err := model.UpdateCommunityTag(id, updates); err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, gin.H{"message": "tag updated"})
+}
+
+func AdminDeleteCommunityTag(c *gin.Context) {
+	id, _ := strconv.Atoi(c.Param("id"))
+	if id <= 0 {
+		common.ApiErrorMsg(c, "invalid tag id")
+		return
+	}
+	if err := model.DeleteCommunityTag(id); err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, gin.H{"message": "tag deleted"})
+}
+
+func AdminFeatureCommunityPost(c *gin.Context) {
+	postId, _ := strconv.Atoi(c.Param("id"))
+	if postId <= 0 {
+		common.ApiErrorMsg(c, "invalid post id")
+		return
+	}
+	var req struct {
+		Featured bool `json:"featured"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	if err := model.UpdateCommunityPostFeatured(postId, req.Featured); err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, gin.H{"message": "post featured status updated"})
+}
+
+func AdminPinCommunityPost(c *gin.Context) {
+	postId, _ := strconv.Atoi(c.Param("id"))
+	if postId <= 0 {
+		common.ApiErrorMsg(c, "invalid post id")
+		return
+	}
+	var req struct {
+		Pinned bool `json:"pinned"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	if err := model.UpdateCommunityPostPinned(postId, req.Pinned); err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, gin.H{"message": "post pinned status updated"})
+}
+
+// --- Reward history ---
+
+func ListCommunityRewards(c *gin.Context) {
+	userId := c.GetInt("id")
+	pageInfo := common.GetPageQuery(c)
+	txns, total, err := model.ListCommunityRewardTransactions(userId, pageInfo)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, gin.H{
+		"items": txns,
+		"pagination": gin.H{
+			"page":      pageInfo.Page,
+			"page_size": pageInfo.PageSize,
+			"total":     total,
+		},
+	})
+}
+
+func AdminListCommunityRewards(c *gin.Context) {
+	pageInfo := common.GetPageQuery(c)
+	txns, total, err := model.ListAllCommunityRewardTransactions(pageInfo)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, gin.H{
+		"items": txns,
+		"pagination": gin.H{
+			"page":      pageInfo.Page,
+			"page_size": pageInfo.PageSize,
+			"total":     total,
+		},
+	})
+}
+
+// --- Notifications ---
+
+func ListNotifications(c *gin.Context) {
+	userId := c.GetInt("id")
+	pageInfo := common.GetPageQuery(c)
+	notifications, total, err := model.ListUserNotifications(userId, pageInfo)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, gin.H{
+		"items": notifications,
+		"pagination": gin.H{
+			"page":      pageInfo.Page,
+			"page_size": pageInfo.PageSize,
+			"total":     total,
+		},
+	})
+}
+
+func GetUnreadCount(c *gin.Context) {
+	userId := c.GetInt("id")
+	count, err := model.GetUnreadNotificationCount(userId)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, gin.H{"count": count})
+}
+
+func MarkNotificationRead(c *gin.Context) {
+	id, _ := strconv.Atoi(c.Param("id"))
+	if err := model.MarkNotificationAsRead(id, c.GetInt("id")); err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, gin.H{"message": "marked as read"})
+}
+
+func MarkAllNotificationsRead(c *gin.Context) {
+	if err := model.MarkAllNotificationsAsRead(c.GetInt("id")); err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, gin.H{"message": "all marked as read"})
 }

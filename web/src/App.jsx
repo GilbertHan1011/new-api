@@ -50,6 +50,7 @@ import PersonalSetting from './components/settings/PersonalSetting';
 import Setup from './pages/Setup';
 import Community from './pages/Community';
 import CommunityPostDetail from './pages/Community/PostDetail';
+import CommunityRewardHistory from './pages/Community/RewardHistory';
 import SetupCheck from './components/layout/SetupCheck';
 
 const Home = lazy(() => import('./pages/Home'));
@@ -341,6 +342,14 @@ function App() {
           element={
             <Suspense fallback={<Loading></Loading>} key={location.pathname}>
               <Community />
+            </Suspense>
+          }
+        />
+        <Route
+          path='/community/rewards'
+          element={
+            <Suspense fallback={<Loading></Loading>} key={location.pathname}>
+              <CommunityRewardHistory />
             </Suspense>
           }
         />

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
 	"gorm.io/gorm"
 )
@@ -35,7 +36,7 @@ func TipCommunityShowcasePost(postId int, fromUserId int, amount int) error {
 		return errors.New("insufficient quota")
 	}
 
-	return model.DB.Transaction(func(tx *gorm.DB) error {
+	err = model.DB.Transaction(func(tx *gorm.DB) error {
 		var fromUser model.User
 		if err := tx.Set("gorm:query_option", "FOR UPDATE").First(&fromUser, "id = ?", fromUserId).Error; err != nil {
 			return err
@@ -66,6 +67,14 @@ func TipCommunityShowcasePost(postId int, fromUserId int, amount int) error {
 		}
 		return nil
 	})
+	if err != nil {
+		return err
+	}
+
+	dollarAmount := float64(amount) / common.QuotaPerUnit
+	model.RecordLog(fromUserId, model.LogTypeCommunity, fmt.Sprintf("社区打赏帖子 #%d, 扣除 $%.2f", postId, dollarAmount))
+	model.RecordLog(post.UserId, model.LogTypeCommunity, fmt.Sprintf("收到社区打赏 帖子 #%d, 获得 $%.2f", postId, dollarAmount))
+	return nil
 }
 
 func CreateCommunityPostWithBusinessRules(post *model.CommunityPost) error {
@@ -84,7 +93,7 @@ func CreateCommunityPostWithBusinessRules(post *model.CommunityPost) error {
 		return errors.New("insufficient quota")
 	}
 
-	return model.DB.Transaction(func(tx *gorm.DB) error {
+	err = model.DB.Transaction(func(tx *gorm.DB) error {
 		var owner model.User
 		if err := tx.Set("gorm:query_option", "FOR UPDATE").First(&owner, "id = ?", post.UserId).Error; err != nil {
 			return err
@@ -119,6 +128,13 @@ func CreateCommunityPostWithBusinessRules(post *model.CommunityPost) error {
 		}
 		return nil
 	})
+	if err != nil {
+		return err
+	}
+
+	dollarAmount := float64(post.RewardAmount) / common.QuotaPerUnit
+	model.RecordLog(post.UserId, model.LogTypeCommunity, fmt.Sprintf("社区悬赏帖子 #%d, 冻结 $%.2f", post.Id, dollarAmount))
+	return nil
 }
 
 func SelectCommunityBountyComment(postId int, ownerUserId int, commentId int) error {
@@ -147,7 +163,8 @@ func SelectCommunityBountyComment(postId int, ownerUserId int, commentId int) er
 		return errors.New("cannot select your own comment")
 	}
 
-	return model.DB.Transaction(func(tx *gorm.DB) error {
+	var awardAmount int
+	err = model.DB.Transaction(func(tx *gorm.DB) error {
 		var lockedPost model.CommunityPost
 		if err := tx.Set("gorm:query_option", "FOR UPDATE").First(&lockedPost, "id = ?", postId).Error; err != nil {
 			return err
@@ -163,6 +180,7 @@ func SelectCommunityBountyComment(postId int, ownerUserId int, commentId int) er
 		if escrow.Status != model.CommunityBountyEscrowStatusLocked {
 			return errors.New("bounty escrow is not locked")
 		}
+		awardAmount = escrow.Amount
 
 		if err := tx.Model(&model.User{}).Where("id = ?", comment.UserId).Update("quota", gorm.Expr("quota + ?", escrow.Amount)).Error; err != nil {
 			return err
@@ -198,6 +216,14 @@ func SelectCommunityBountyComment(postId int, ownerUserId int, commentId int) er
 		}
 		return nil
 	})
+	if err != nil {
+		return err
+	}
+
+	dollarAmount := float64(awardAmount) / common.QuotaPerUnit
+	model.RecordLog(ownerUserId, model.LogTypeCommunity, fmt.Sprintf("社区悬赏帖子 #%d 采纳回复, 发放 $%.2f", postId, dollarAmount))
+	model.RecordLog(comment.UserId, model.LogTypeCommunity, fmt.Sprintf("社区悬赏帖子 #%d 回复被采纳, 获得 $%.2f", postId, dollarAmount))
+	return nil
 }
 
 func CancelCommunityBounty(postId int, ownerUserId int) error {
@@ -215,7 +241,8 @@ func CancelCommunityBounty(postId int, ownerUserId int) error {
 		return errors.New("bounty post is not active")
 	}
 
-	return model.DB.Transaction(func(tx *gorm.DB) error {
+	var refundAmount int
+	err = model.DB.Transaction(func(tx *gorm.DB) error {
 		var lockedPost model.CommunityPost
 		if err := tx.Set("gorm:query_option", "FOR UPDATE").First(&lockedPost, "id = ?", postId).Error; err != nil {
 			return err
@@ -231,6 +258,7 @@ func CancelCommunityBounty(postId int, ownerUserId int) error {
 		if escrow.Status != model.CommunityBountyEscrowStatusLocked {
 			return errors.New("bounty escrow is not locked")
 		}
+		refundAmount = escrow.Amount
 
 		if err := tx.Model(&model.User{}).Where("id = ?", ownerUserId).Update("quota", gorm.Expr("quota + ?", escrow.Amount)).Error; err != nil {
 			return err
@@ -254,4 +282,11 @@ func CancelCommunityBounty(postId int, ownerUserId int) error {
 		}
 		return nil
 	})
+	if err != nil {
+		return err
+	}
+
+	dollarAmount := float64(refundAmount) / common.QuotaPerUnit
+	model.RecordLog(ownerUserId, model.LogTypeCommunity, fmt.Sprintf("社区悬赏帖子 #%d 取消, 退回 $%.2f", postId, dollarAmount))
+	return nil
 }

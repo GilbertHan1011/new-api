@@ -260,6 +260,8 @@ func SetApiRouter(router *gin.Engine) {
 			communityRoute.GET("/posts", controller.ListCommunityPosts)
 			communityRoute.GET("/posts/:id", controller.GetCommunityPost)
 			communityRoute.GET("/posts/:id/comments", controller.ListCommunityComments)
+			communityRoute.GET("/tags", controller.ListCommunityTags)
+			communityRoute.GET("/uploads/:filename", controller.CommunityServeUpload)
 
 			communityAuthedRoute := communityRoute.Group("/")
 			communityAuthedRoute.Use(middleware.UserAuth())
@@ -269,6 +271,8 @@ func SetApiRouter(router *gin.Engine) {
 				communityAuthedRoute.POST("/posts/:id/tip", controller.TipCommunityPost)
 				communityAuthedRoute.POST("/posts/:id/select-comment", controller.SelectCommunityBountyComment)
 				communityAuthedRoute.POST("/posts/:id/cancel-bounty", controller.CancelCommunityBounty)
+				communityAuthedRoute.POST("/upload", controller.CommunityUploadImage)
+				communityAuthedRoute.GET("/rewards", controller.ListCommunityRewards)
 			}
 
 			communityAdminRoute := communityRoute.Group("/admin")
@@ -277,8 +281,24 @@ func SetApiRouter(router *gin.Engine) {
 				communityAdminRoute.GET("/posts", controller.AdminListCommunityPosts)
 				communityAdminRoute.POST("/posts/:id/hide", controller.AdminHideCommunityPost)
 				communityAdminRoute.POST("/posts/:id/lock", controller.AdminLockCommunityPost)
+				communityAdminRoute.POST("/posts/:id/feature", controller.AdminFeatureCommunityPost)
+				communityAdminRoute.POST("/posts/:id/pin", controller.AdminPinCommunityPost)
 				communityAdminRoute.POST("/comments/:id/hide", controller.AdminHideCommunityComment)
+				communityAdminRoute.GET("/tags", controller.AdminListCommunityTags)
+				communityAdminRoute.POST("/tags", controller.AdminCreateCommunityTag)
+				communityAdminRoute.PUT("/tags/:id", controller.AdminUpdateCommunityTag)
+				communityAdminRoute.DELETE("/tags/:id", controller.AdminDeleteCommunityTag)
+				communityAdminRoute.GET("/rewards", controller.AdminListCommunityRewards)
 			}
+		}
+
+		notificationRoute := apiRouter.Group("/notifications")
+		notificationRoute.Use(middleware.UserAuth())
+		{
+			notificationRoute.GET("", controller.ListNotifications)
+			notificationRoute.GET("/unread-count", controller.GetUnreadCount)
+			notificationRoute.POST("/:id/read", controller.MarkNotificationRead)
+			notificationRoute.POST("/read-all", controller.MarkAllNotificationsRead)
 		}
 
 		usageRoute := apiRouter.Group("/usage")

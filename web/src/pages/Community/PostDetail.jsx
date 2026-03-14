@@ -24,7 +24,6 @@ import {
   Button,
   Card,
   Empty,
-  Form,
   Modal,
   Skeleton,
   Space,
@@ -32,10 +31,14 @@ import {
   Toast,
   Typography,
 } from '@douyinfe/semi-ui';
+import MDEditor from '@uiw/react-md-editor';
 import { API, showError } from '../../helpers';
+import { uploadImage } from '../../helpers/imageUpload';
 import { Link, useParams } from 'react-router-dom';
-import { getUserIdFromLocalStorage, getRelativeTime } from '../../helpers/utils';
-import { stringToColor } from '../../helpers/render';
+import { getUserIdFromLocalStorage, getRelativeTime, isAdmin } from '../../helpers/utils';
+import { stringToColor, renderQuota } from '../../helpers/render';
+import { displayAmountToQuota } from '../../helpers/quota';
+import { MarkdownRenderer } from '../../components/common/markdown/MarkdownRenderer';
 
 const CATEGORY_MAP = {
   discussion: { label: '讨论', color: 'blue' },
@@ -59,6 +62,8 @@ const CommunityPostDetail = () => {
   const [tipVisible, setTipVisible] = useState(false);
   const [post, setPost] = useState(null);
   const [comments, setComments] = useState([]);
+  const [commentContent, setCommentContent] = useState('');
+  const [tipAmount, setTipAmount] = useState('');
   const [formApi, setFormApi] = useState(null);
   const [tipFormApi, setTipFormApi] = useState(null);
   const currentUserId = Number(getUserIdFromLocalStorage());
@@ -93,9 +98,7 @@ const CommunityPostDetail = () => {
   };
 
   const handleCreateComment = async () => {
-    if (!formApi) return;
-    const values = formApi.getValues();
-    if (!values.content?.trim()) {
+    if (!commentContent?.trim()) {
       Toast.error('评论内容不能为空');
       return;
     }
@@ -103,7 +106,7 @@ const CommunityPostDetail = () => {
     setSubmitting(true);
     try {
       const res = await API.post(`/api/community/posts/${id}/comments`, {
-        content: values.content,
+        content: commentContent,
         parent_id: 0,
       });
       const { success, message } = res.data;
@@ -112,7 +115,7 @@ const CommunityPostDetail = () => {
         return;
       }
       Toast.success('评论已发布');
-      formApi.reset();
+      setCommentContent('');
       await loadPost();
     } catch (error) {
       console.error(error);
@@ -122,18 +125,22 @@ const CommunityPostDetail = () => {
   };
 
   const handleTip = async () => {
-    if (!tipFormApi) return;
-    const values = tipFormApi.getValues();
-    const amount = Number(values.amount || 0);
-    if (amount <= 0) {
-      Toast.error('打赏额度必须大于 0');
+    const amount = Number(tipAmount || 0);
+    if (amount < 0.1) {
+      Toast.error('打赏额度最小为 $0.1');
+      return;
+    }
+
+    const quotaAmount = displayAmountToQuota(amount);
+    if (quotaAmount <= 0) {
+      Toast.error('打赏额度无效');
       return;
     }
 
     setTipSubmitting(true);
     try {
       const res = await API.post(`/api/community/posts/${id}/tip`, {
-        amount,
+        amount: quotaAmount,
       });
       const { success, message } = res.data;
       if (!success) {
@@ -142,7 +149,7 @@ const CommunityPostDetail = () => {
       }
       Toast.success('打赏成功');
       setTipVisible(false);
-      tipFormApi.reset();
+      setTipAmount('');
       await loadPost();
     } catch (error) {
       console.error(error);
@@ -198,6 +205,47 @@ const CommunityPostDetail = () => {
     });
   };
 
+  const handleTogglePin = async () => {
+    setActionSubmitting(true);
+    try {
+      const res = await API.post(`/api/community/admin/posts/${id}/pin`, {
+        pinned: !post.is_pinned,
+      });
+      const { success, message } = res.data;
+      if (!success) {
+        showError(message);
+        return;
+      }
+      Toast.success(post.is_pinned ? '已取消置顶' : '已置顶');
+      await loadPost();
+    } catch (error) {
+      console.error(error);
+    } finally {
+      setActionSubmitting(false);
+    }
+  };
+
+  const handleCommentPaste = async (e) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+
+    for (let i = 0; i < items.length; i++) {
+      if (items[i].type.indexOf('image') !== -1) {
+        e.preventDefault();
+        const file = items[i].getAsFile();
+        try {
+          Toast.info('正在上传图片...');
+          const url = await uploadImage(file);
+          setCommentContent(prev => prev + '\n' + `![image](${url})`);
+          Toast.success('图片上传成功');
+        } catch (err) {
+          Toast.error(err.message || '图片上传失败');
+        }
+        break;
+      }
+    }
+  };
+
   useEffect(() => {
     loadPost();
   }, [id]);
@@ -239,13 +287,18 @@ const CommunityPostDetail = () => {
               <Typography.Text type='tertiary' style={{ fontSize: 12 }}>
                 {post.view_count || 0} 浏览
               </Typography.Text>
+              {post.tags?.map((tag) => (
+                <Tag key={tag.id} color={tag.color || 'blue'} size='small' type='light'>
+                  {tag.name}
+                </Tag>
+              ))}
             </div>
 
             {/* Bounty / Showcase status */}
             {post.category === 'bounty' && (
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                 <Tag color='orange' size='small' type='light'>
-                  悬赏 {post.reward_amount || 0}
+                  悬赏 {renderQuota(post.reward_amount || 0)}
                 </Tag>
                 {post.status === 'resolved' && (
                   <Tag color='green' size='small'>已解决</Tag>
@@ -258,7 +311,7 @@ const CommunityPostDetail = () => {
             {post.category === 'showcase' && (post.tip_total_amount || 0) > 0 && (
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <Tag color='violet' size='small' type='light'>
-                  已收打赏 {post.tip_total_amount}
+                  已收打赏 {renderQuota(post.tip_total_amount)}
                 </Tag>
                 <Typography.Text type='tertiary' style={{ fontSize: 12 }}>
                   {post.tip_count || 0} 次
@@ -275,11 +328,7 @@ const CommunityPostDetail = () => {
             )}
 
             {/* Full content */}
-            <Typography.Paragraph
-              style={{ marginBottom: 0, whiteSpace: 'pre-wrap', marginTop: 4 }}
-            >
-              {post.content}
-            </Typography.Paragraph>
+            <MarkdownRenderer content={post.content || ''} />
 
             {/* Action buttons */}
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4 }}>
@@ -303,25 +352,40 @@ const CommunityPostDetail = () => {
                   取消悬赏
                 </Button>
               )}
+              {isAdmin() && (
+                <Button
+                  type='tertiary'
+                  onClick={handleTogglePin}
+                  loading={actionSubmitting}
+                >
+                  {post.is_pinned ? '取消置顶' : '置顶'}
+                </Button>
+              )}
             </div>
           </div>
         </Card>
 
         {/* Comment form */}
         <Card className='w-full' title='发表评论'>
-          <Form getFormApi={(api) => setFormApi(api)}>
-            <Form.TextArea field='content' placeholder='写下你的评论...' rows={4} noLabel />
-            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 8 }}>
-              <Button
-                type='primary'
-                theme='solid'
-                onClick={handleCreateComment}
-                loading={submitting}
-              >
-                发布评论
-              </Button>
-            </div>
-          </Form>
+          <div data-color-mode='light'>
+            <MDEditor
+              value={commentContent}
+              onChange={(val) => setCommentContent(val || '')}
+              height={150}
+              preview='edit'
+              onPaste={handleCommentPaste}
+            />
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 8 }}>
+            <Button
+              type='primary'
+              theme='solid'
+              onClick={handleCreateComment}
+              loading={submitting}
+            >
+              发布评论
+            </Button>
+          </div>
         </Card>
 
         {/* Comment list */}
@@ -371,9 +435,7 @@ const CommunityPostDetail = () => {
                       </div>
 
                       {/* Comment content */}
-                      <Typography.Paragraph style={{ marginBottom: 0, whiteSpace: 'pre-wrap' }}>
-                        {comment.content}
-                      </Typography.Paragraph>
+                      <MarkdownRenderer content={comment.content || ''} />
 
                       {/* Select button for bounty owner */}
                       {post.category === 'bounty' &&
@@ -442,14 +504,31 @@ const CommunityPostDetail = () => {
       <Modal
         title='打赏作者'
         visible={tipVisible}
-        onCancel={() => setTipVisible(false)}
+        onCancel={() => { setTipVisible(false); setTipAmount(''); }}
         onOk={handleTip}
         okText='确认打赏'
         confirmLoading={tipSubmitting}
       >
-        <Form getFormApi={(api) => setTipFormApi(api)}>
-          <Form.InputNumber field='amount' label='打赏额度' min={1} />
-        </Form>
+        <div>
+          <Typography.Text strong style={{ display: 'block', marginBottom: 8 }}>
+            打赏额度（美元）
+          </Typography.Text>
+          <input
+            type='number'
+            value={tipAmount}
+            onChange={(e) => setTipAmount(e.target.value)}
+            min={0.1}
+            step={0.1}
+            placeholder='输入打赏金额'
+            style={{
+              width: '100%',
+              padding: '8px 12px',
+              borderRadius: 6,
+              border: '1px solid var(--semi-color-border)',
+              fontSize: 14,
+            }}
+          />
+        </div>
       </Modal>
     </div>
   );

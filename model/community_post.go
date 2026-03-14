@@ -33,14 +33,18 @@ type CommunityPost struct {
 	CommentCount      int    `json:"comment_count" gorm:"default:0"`
 	TipCount          int    `json:"tip_count" gorm:"default:0"`
 	TipTotalAmount    int    `json:"tip_total_amount" gorm:"default:0"`
+	IsFeatured        bool   `json:"is_featured" gorm:"default:false"`
+	IsPinned          bool   `json:"is_pinned" gorm:"default:false"`
+	IsAnonymous       bool   `json:"is_anonymous" gorm:"default:false"`
 	CreatedAt         int64  `json:"created_at" gorm:"bigint;index"`
 	UpdatedAt         int64  `json:"updated_at" gorm:"bigint"`
 }
 
 type CommunityPostWithAuthor struct {
 	CommunityPost
-	Username    string `json:"username"`
-	DisplayName string `json:"display_name"`
+	Username    string          `json:"username"`
+	DisplayName string          `json:"display_name"`
+	Tags        []*CommunityTag `json:"tags" gorm:"-"`
 }
 
 func (p *CommunityPost) BeforeCreate(tx *gorm.DB) error {
@@ -81,21 +85,32 @@ func GetCommunityPostDetailById(id int) (*CommunityPostWithAuthor, error) {
 	if err != nil {
 		return nil, err
 	}
-	user, userErr := GetUserById(post.UserId, false)
-	if userErr != nil {
-		return nil, userErr
+	username := "匿名用户"
+	displayName := "匿名用户"
+	if !post.IsAnonymous {
+		user, userErr := GetUserById(post.UserId, false)
+		if userErr != nil {
+			return nil, userErr
+		}
+		username = user.Username
+		displayName = user.DisplayName
 	}
+	tagMap := GetBatchPostTags([]int{post.Id})
 	return &CommunityPostWithAuthor{
 		CommunityPost: post,
-		Username:      user.Username,
-		DisplayName:   user.DisplayName,
+		Username:      username,
+		DisplayName:   displayName,
+		Tags:          tagMap[post.Id],
 	}, nil
 }
 
-func ListCommunityPosts(category string, pageInfo *common.PageInfo) ([]*CommunityPostWithAuthor, int64, error) {
+func ListCommunityPosts(category string, tagId int, pageInfo *common.PageInfo) ([]*CommunityPostWithAuthor, int64, error) {
 	query := DB.Model(&CommunityPost{}).Where("status <> ?", CommunityPostStatusHidden)
 	if category != "" {
 		query = query.Where("category = ?", category)
+	}
+	if tagId > 0 {
+		query = query.Where("id IN (?)", DB.Model(&CommunityPostTag{}).Select("post_id").Where("tag_id = ?", tagId))
 	}
 
 	var total int64
@@ -104,21 +119,35 @@ func ListCommunityPosts(category string, pageInfo *common.PageInfo) ([]*Communit
 	}
 
 	var posts []*CommunityPost
-	if err := query.Order("id desc").Limit(pageInfo.GetPageSize()).Offset(pageInfo.GetStartIdx()).Find(&posts).Error; err != nil {
+	if err := query.Order("is_pinned DESC, id DESC").Limit(pageInfo.GetPageSize()).Offset(pageInfo.GetStartIdx()).Find(&posts).Error; err != nil {
 		return nil, 0, err
 	}
 
+	postIds := make([]int, 0, len(posts))
+	for _, p := range posts {
+		postIds = append(postIds, p.Id)
+	}
+	tagMap := GetBatchPostTags(postIds)
+
 	result := make([]*CommunityPostWithAuthor, 0, len(posts))
 	for _, post := range posts {
-		user, err := GetUserById(post.UserId, false)
-		if err != nil {
-			continue
+		username := "匿名用户"
+		displayName := "匿名用户"
+		if !post.IsAnonymous {
+			user, err := GetUserById(post.UserId, false)
+			if err != nil {
+				continue
+			}
+			username = user.Username
+			displayName = user.DisplayName
 		}
-		result = append(result, &CommunityPostWithAuthor{
+		item := &CommunityPostWithAuthor{
 			CommunityPost: *post,
-			Username:      user.Username,
-			DisplayName:   user.DisplayName,
-		})
+			Username:      username,
+			DisplayName:   displayName,
+			Tags:          tagMap[post.Id],
+		}
+		result = append(result, item)
 	}
 	return result, total, nil
 }
@@ -153,4 +182,12 @@ func ValidateCommunityCategory(category string) error {
 	default:
 		return errors.New("invalid community category")
 	}
+}
+
+func UpdateCommunityPostFeatured(postId int, featured bool) error {
+	return DB.Model(&CommunityPost{}).Where("id = ?", postId).Update("is_featured", featured).Error
+}
+
+func UpdateCommunityPostPinned(postId int, pinned bool) error {
+	return DB.Model(&CommunityPost{}).Where("id = ?", postId).Update("is_pinned", pinned).Error
 }

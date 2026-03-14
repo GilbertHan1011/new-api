@@ -25,7 +25,9 @@ export const useNavigation = (t, docsLink, headerNavModules) => {
     const defaultModules = {
       home: true,
       console: true,
-      community: true,
+      bounty: true,
+      discussion: true,
+      showcase: true,
       pricing: true,
       docs: false,
       about: true,
@@ -53,9 +55,22 @@ export const useNavigation = (t, docsLink, headerNavModules) => {
         to: '/pricing',
       },
       {
-        text: t('社区'),
-        itemKey: 'community',
-        to: '/community',
+        text: t('悬赏区'),
+        itemKey: 'bounty',
+        to: '/community?category=bounty',
+        highlight: true,
+      },
+      {
+        text: t('讨论区'),
+        itemKey: 'discussion',
+        to: '/community?category=discussion',
+        highlight: true,
+      },
+      {
+        text: t('夸夸区'),
+        itemKey: 'showcase',
+        to: '/community?category=showcase',
+        highlight: true,
       },
       ...(docsLink
         ? [

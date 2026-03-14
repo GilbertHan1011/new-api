@@ -272,6 +272,9 @@ func migrateDB() error {
 		&CommunityComment{},
 		&CommunityRewardTransaction{},
 		&CommunityBountyEscrow{},
+		&CommunityTag{},
+		&CommunityPostTag{},
+		&Notification{},
 		&Model{},
 		&Vendor{},
 		&PrefillGroup{},
@@ -297,6 +300,7 @@ func migrateDB() error {
 			return err
 		}
 	}
+	SeedDefaultCommunityTags()
 	return nil
 }
 

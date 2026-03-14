@@ -34,9 +34,11 @@ const Navigation = ({
     const hoverClasses = 'hover:text-semi-color-primary';
     const spacingClasses = isMobile ? 'p-1' : 'p-2';
 
-    const commonLinkClasses = `${baseClasses} ${spacingClasses} ${hoverClasses}`;
-
     return mainNavLinks.map((link) => {
+      const highlightClasses = link.highlight
+        ? 'bg-gradient-to-r from-orange-500 to-pink-500 text-white hover:from-orange-600 hover:to-pink-600'
+        : hoverClasses;
+      const commonLinkClasses = `${baseClasses} ${spacingClasses} ${highlightClasses}`;
       const linkContent = <span>{link.text}</span>;
 
       if (link.isExternal) {
