@@ -19,6 +19,8 @@ For commercial licensing, please contact support@quantumnous.com
 
 import React, { useEffect, useMemo, useState } from 'react';
 import {
+  Avatar,
+  Banner,
   Button,
   Card,
   Empty,
@@ -26,12 +28,27 @@ import {
   Modal,
   Skeleton,
   Space,
+  Tag,
   Toast,
   Typography,
 } from '@douyinfe/semi-ui';
 import { API, showError } from '../../helpers';
 import { Link, useParams } from 'react-router-dom';
-import { getUserIdFromLocalStorage } from '../../helpers/utils';
+import { getUserIdFromLocalStorage, getRelativeTime } from '../../helpers/utils';
+import { stringToColor } from '../../helpers/render';
+
+const CATEGORY_MAP = {
+  discussion: { label: '讨论', color: 'blue' },
+  showcase: { label: '夸夸', color: 'violet' },
+  bounty: { label: '悬赏', color: 'orange' },
+};
+
+const toJsTime = (unixSeconds) => (unixSeconds ? unixSeconds * 1000 : 0);
+
+const getInitials = (name) => {
+  if (!name) return '??';
+  return name.slice(0, 2).toUpperCase();
+};
 
 const CommunityPostDetail = () => {
   const { id } = useParams();
@@ -154,33 +171,248 @@ const CommunityPostDetail = () => {
     }
   };
 
-  const handleCancelBounty = async () => {
-    setActionSubmitting(true);
-    try {
-      const res = await API.post(`/api/community/posts/${id}/cancel-bounty`, {});
-      const { success, message } = res.data;
-      if (!success) {
-        showError(message);
-        return;
-      }
-      Toast.success('悬赏已取消并退款');
-      await loadPost();
-    } catch (error) {
-      console.error(error);
-    } finally {
-      setActionSubmitting(false);
-    }
+  const handleCancelBounty = () => {
+    Modal.confirm({
+      title: '确认取消悬赏',
+      content: '取消后悬赏额度将退回你的账户，此操作不可撤销。确定要取消吗？',
+      okText: '确认取消',
+      cancelText: '再想想',
+      okType: 'danger',
+      onOk: async () => {
+        setActionSubmitting(true);
+        try {
+          const res = await API.post(`/api/community/posts/${id}/cancel-bounty`, {});
+          const { success, message } = res.data;
+          if (!success) {
+            showError(message);
+            return;
+          }
+          Toast.success('悬赏已取消并退款');
+          await loadPost();
+        } catch (error) {
+          console.error(error);
+        } finally {
+          setActionSubmitting(false);
+        }
+      },
+    });
   };
 
   useEffect(() => {
     loadPost();
   }, [id]);
 
+  const renderPostContent = () => {
+    if (!post) return null;
+
+    const displayName = post.display_name || post.username || `User ${post.user_id}`;
+    const cat = CATEGORY_MAP[post.category] || CATEGORY_MAP.discussion;
+    const relTime = getRelativeTime(toJsTime(post.created_at));
+
+    return (
+      <>
+        {/* Post Card */}
+        <Card className='w-full'>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            {/* Title */}
+            <Typography.Title heading={3} style={{ margin: 0 }}>
+              {post.title}
+            </Typography.Title>
+
+            {/* Meta row: avatar + name + category + time + views */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+              <Avatar
+                size='small'
+                style={{ backgroundColor: stringToColor(displayName), flexShrink: 0 }}
+              >
+                {getInitials(displayName)}
+              </Avatar>
+              <Typography.Text strong style={{ fontSize: 13 }}>
+                {displayName}
+              </Typography.Text>
+              <Tag color={cat.color} size='small'>
+                {cat.label}
+              </Tag>
+              <Typography.Text type='tertiary' style={{ fontSize: 12 }}>
+                {relTime}
+              </Typography.Text>
+              <Typography.Text type='tertiary' style={{ fontSize: 12 }}>
+                {post.view_count || 0} 浏览
+              </Typography.Text>
+            </div>
+
+            {/* Bounty / Showcase status */}
+            {post.category === 'bounty' && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                <Tag color='orange' size='small' type='light'>
+                  悬赏 {post.reward_amount || 0}
+                </Tag>
+                {post.status === 'resolved' && (
+                  <Tag color='green' size='small'>已解决</Tag>
+                )}
+                {post.status === 'cancelled' && (
+                  <Tag color='yellow' size='small'>已取消</Tag>
+                )}
+              </div>
+            )}
+            {post.category === 'showcase' && (post.tip_total_amount || 0) > 0 && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <Tag color='violet' size='small' type='light'>
+                  已收打赏 {post.tip_total_amount}
+                </Tag>
+                <Typography.Text type='tertiary' style={{ fontSize: 12 }}>
+                  {post.tip_count || 0} 次
+                </Typography.Text>
+              </div>
+            )}
+
+            {/* Bounty status banners */}
+            {post.category === 'bounty' && post.status === 'resolved' && (
+              <Banner type='success' description='悬赏已完成，奖励已发放给被采纳者。' />
+            )}
+            {post.category === 'bounty' && post.status === 'cancelled' && (
+              <Banner type='warning' description='悬赏已取消，额度已退回发布者账户。' />
+            )}
+
+            {/* Full content */}
+            <Typography.Paragraph
+              style={{ marginBottom: 0, whiteSpace: 'pre-wrap', marginTop: 4 }}
+            >
+              {post.content}
+            </Typography.Paragraph>
+
+            {/* Action buttons */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4 }}>
+              {post.category === 'showcase' && !isOwner && (
+                <Button type='primary' theme='solid' onClick={() => setTipVisible(true)}>
+                  打赏
+                </Button>
+              )}
+              {post.category === 'showcase' && isOwner && (
+                <Typography.Text type='tertiary' style={{ fontSize: 12 }}>
+                  这是你的帖子
+                </Typography.Text>
+              )}
+              {post.category === 'bounty' && post.status === 'active' && isOwner && (
+                <Button
+                  type='danger'
+                  theme='outline'
+                  onClick={handleCancelBounty}
+                  loading={actionSubmitting}
+                >
+                  取消悬赏
+                </Button>
+              )}
+            </div>
+          </div>
+        </Card>
+
+        {/* Comment form */}
+        <Card className='w-full' title='发表评论'>
+          <Form getFormApi={(api) => setFormApi(api)}>
+            <Form.TextArea field='content' placeholder='写下你的评论...' rows={4} noLabel />
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 8 }}>
+              <Button
+                type='primary'
+                theme='solid'
+                onClick={handleCreateComment}
+                loading={submitting}
+              >
+                发布评论
+              </Button>
+            </div>
+          </Form>
+        </Card>
+
+        {/* Comment list */}
+        <Card className='w-full' title={`评论 (${comments.length})`}>
+          {comments.length === 0 ? (
+            <Empty
+              image={Empty.PRESENTED_IMAGE_SIMPLE}
+              title='暂无评论'
+              description='来发第一条评论吧'
+            />
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              {comments.map((comment) => {
+                const commentUser = comment.display_name || comment.username || `User ${comment.user_id}`;
+                const commentTime = getRelativeTime(toJsTime(comment.created_at));
+                const isSelected = comment.is_selected;
+
+                return (
+                  <div
+                    key={comment.id}
+                    style={{
+                      padding: '12px 16px',
+                      borderRadius: 8,
+                      border: '1px solid var(--semi-color-border)',
+                      borderLeft: isSelected ? '3px solid var(--semi-color-success)' : '1px solid var(--semi-color-border)',
+                      background: isSelected ? 'var(--semi-color-success-light-default)' : 'transparent',
+                    }}
+                  >
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                      {/* Comment header */}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                        <Avatar
+                          size='extra-small'
+                          style={{ backgroundColor: stringToColor(commentUser), flexShrink: 0 }}
+                        >
+                          {getInitials(commentUser)}
+                        </Avatar>
+                        <Typography.Text strong style={{ fontSize: 13 }}>
+                          {commentUser}
+                        </Typography.Text>
+                        {isSelected && (
+                          <Tag color='green' size='small'>已采纳</Tag>
+                        )}
+                        <Typography.Text type='tertiary' style={{ fontSize: 12 }}>
+                          {commentTime}
+                        </Typography.Text>
+                      </div>
+
+                      {/* Comment content */}
+                      <Typography.Paragraph style={{ marginBottom: 0, whiteSpace: 'pre-wrap' }}>
+                        {comment.content}
+                      </Typography.Paragraph>
+
+                      {/* Select button for bounty owner */}
+                      {post.category === 'bounty' &&
+                        post.status === 'active' &&
+                        isOwner &&
+                        !isSelected &&
+                        Number(comment.user_id) !== currentUserId && (
+                          <div>
+                            <Button
+                              size='small'
+                              type='primary'
+                              theme='light'
+                              onClick={() => handleSelectComment(comment.id)}
+                              loading={actionSubmitting}
+                            >
+                              采纳这条回复
+                            </Button>
+                          </div>
+                        )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </Card>
+      </>
+    );
+  };
+
   return (
-    <div className='w-full p-4 md:p-6'>
+    <div className='w-full mt-[60px]'>
       <Space vertical align='start' spacing='medium' className='w-full'>
         <div>
-          <Link to='/community'>← 返回社区</Link>
+          <Link to='/community' style={{ textDecoration: 'none' }}>
+            <Button theme='borderless' type='tertiary'>
+              &larr; 返回社区
+            </Button>
+          </Link>
         </div>
 
         {loading ? (
@@ -199,119 +431,11 @@ const CommunityPostDetail = () => {
             <Empty
               image={Empty.PRESENTED_IMAGE_SIMPLE}
               title='帖子不存在'
-              description='可能帖子 ID 无效，或者后端还未返回数据。'
+              description='可能帖子 ID 无效或帖子已被删除。'
             />
           </Card>
         ) : (
-          <>
-            <Card className='w-full'>
-              <Space vertical align='start' spacing='small' className='w-full'>
-                <Typography.Title heading={3} style={{ margin: 0 }}>
-                  {post.title}
-                </Typography.Title>
-                <Typography.Text type='tertiary'>
-                  分类：{post.category} · 作者：
-                  {post.display_name || post.username || `User ${post.user_id}`} · 状态：
-                  {post.status}
-                  {isOwner ? ' · 你的帖子' : ''}
-                </Typography.Text>
-                {post.category === 'showcase' && (
-                  <Typography.Text type='tertiary'>
-                    累计打赏：{post.tip_total_amount || 0} · 次数：{post.tip_count || 0}
-                  </Typography.Text>
-                )}
-                {post.category === 'bounty' && (
-                  <Typography.Text type='tertiary'>
-                    悬赏额度：{post.reward_amount || 0} · 已支付：{post.reward_paid_amount || 0}
-                  </Typography.Text>
-                )}
-                {post.category === 'bounty' && post.status === 'resolved' && (
-                  <Typography.Text type='success'>该悬赏已完成，奖励已发放。</Typography.Text>
-                )}
-                {post.category === 'bounty' && post.status === 'cancelled' && (
-                  <Typography.Text type='warning'>该悬赏已取消，额度已退回。</Typography.Text>
-                )}
-                <Typography.Paragraph
-                  style={{ marginBottom: 0, whiteSpace: 'pre-wrap' }}
-                >
-                  {post.content}
-                </Typography.Paragraph>
-                <Space>
-                  {post.category === 'showcase' && !isOwner && (
-                    <Button type='primary' theme='solid' onClick={() => setTipVisible(true)}>
-                      打赏
-                    </Button>
-                  )}
-                  {post.category === 'showcase' && isOwner && (
-                    <Typography.Text type='tertiary'>不能给自己的帖子打赏</Typography.Text>
-                  )}
-                  {post.category === 'bounty' && post.status === 'active' && isOwner && (
-                    <Button
-                      type='danger'
-                      theme='outline'
-                      onClick={handleCancelBounty}
-                      loading={actionSubmitting}
-                    >
-                      取消悬赏
-                    </Button>
-                  )}
-                </Space>
-              </Space>
-            </Card>
-
-            <Card className='w-full' title={`发表评论`}>
-              <Form getFormApi={(api) => setFormApi(api)}>
-                <Form.TextArea field='content' placeholder='输入评论内容' rows={4} />
-                <Button
-                  type='primary'
-                  theme='solid'
-                  onClick={handleCreateComment}
-                  loading={submitting}
-                >
-                  发布评论
-                </Button>
-              </Form>
-            </Card>
-
-            <Card className='w-full' title={`评论（${comments.length}）`}>
-              {comments.length === 0 ? (
-                <Empty
-                  image={Empty.PRESENTED_IMAGE_SIMPLE}
-                  title='暂无评论'
-                  description='现在已经支持真实评论创建，来发第一条吧。'
-                />
-              ) : (
-                <Space vertical align='start' spacing='medium' className='w-full'>
-                  {comments.map((comment) => (
-                    <Card key={comment.id} className='w-full'>
-                      <Space vertical align='start' spacing='small' className='w-full'>
-                        <Typography.Text type='tertiary'>
-                          {comment.display_name || comment.username || `User ${comment.user_id}`}
-                        </Typography.Text>
-                        <Typography.Paragraph style={{ marginBottom: 0 }}>
-                          {comment.content}
-                        </Typography.Paragraph>
-                        {post.category === 'bounty' && post.status === 'active' && isOwner && !comment.is_selected && Number(comment.user_id) !== currentUserId && (
-                          <Button
-                            size='small'
-                            type='primary'
-                            theme='light'
-                            onClick={() => handleSelectComment(comment.id)}
-                            loading={actionSubmitting}
-                          >
-                            采纳这条回复
-                          </Button>
-                        )}
-                        {comment.is_selected && (
-                          <Typography.Text type='success'>已采纳</Typography.Text>
-                        )}
-                      </Space>
-                    </Card>
-                  ))}
-                </Space>
-              )}
-            </Card>
-          </>
+          renderPostContent()
         )}
       </Space>
 

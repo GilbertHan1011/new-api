@@ -42,11 +42,12 @@ export default function SettingsHeaderNavModules(props) {
   const [headerNavModules, setHeaderNavModules] = useState({
     home: true,
     console: true,
+    community: true,
     pricing: {
       enabled: true,
       requireAuth: false, // 默认不需要登录鉴权
     },
-    docs: true,
+    docs: false,
     about: true,
   });
 
@@ -82,11 +83,12 @@ export default function SettingsHeaderNavModules(props) {
     const defaultModules = {
       home: true,
       console: true,
+      community: true,
       pricing: {
         enabled: true,
         requireAuth: false,
       },
-      docs: true,
+      docs: false,
       about: true,
     };
     setHeaderNavModules(defaultModules);
@@ -142,17 +144,23 @@ export default function SettingsHeaderNavModules(props) {
           };
         }
 
+        // 向后兼容：旧配置可能没有 community 字段
+        if (modules.community === undefined) {
+          modules.community = true;
+        }
+
         setHeaderNavModules(modules);
       } catch (error) {
         // 使用默认配置
         const defaultModules = {
           home: true,
           console: true,
+          community: true,
           pricing: {
             enabled: true,
             requireAuth: false,
           },
-          docs: true,
+          docs: false,
           about: true,
         };
         setHeaderNavModules(defaultModules);
@@ -171,6 +179,11 @@ export default function SettingsHeaderNavModules(props) {
       key: 'console',
       title: t('控制台'),
       description: t('用户控制面板，管理账户'),
+    },
+    {
+      key: 'community',
+      title: t('社区'),
+      description: t('社区讨论、夸夸、悬赏'),
     },
     {
       key: 'pricing',

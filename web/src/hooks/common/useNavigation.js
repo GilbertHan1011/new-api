@@ -25,13 +25,16 @@ export const useNavigation = (t, docsLink, headerNavModules) => {
     const defaultModules = {
       home: true,
       console: true,
+      community: true,
       pricing: true,
-      docs: true,
+      docs: false,
       about: true,
     };
 
-    // 使用传入的配置或默认配置
-    const modules = headerNavModules || defaultModules;
+    // 使用传入的配置合并默认配置（确保新增模块有默认值）
+    const modules = headerNavModules
+      ? { ...defaultModules, ...headerNavModules }
+      : defaultModules;
 
     const allLinks = [
       {
@@ -48,6 +51,11 @@ export const useNavigation = (t, docsLink, headerNavModules) => {
         text: t('模型广场'),
         itemKey: 'pricing',
         to: '/pricing',
+      },
+      {
+        text: t('社区'),
+        itemKey: 'community',
+        to: '/community',
       },
       ...(docsLink
         ? [

@@ -19,20 +19,29 @@ For commercial licensing, please contact support@quantumnous.com
 
 import React, { useEffect, useMemo, useState } from 'react';
 import {
+  Avatar,
   Button,
   Card,
   Empty,
   Form,
   Modal,
+  Pagination,
   Space,
   Spin,
-  Tabs,
+  Tag,
   Toast,
   Typography,
 } from '@douyinfe/semi-ui';
 import { API, showError } from '../../helpers';
-import { Link } from 'react-router-dom';
-import { getUserIdFromLocalStorage } from '../../helpers/utils';
+import { useNavigate } from 'react-router-dom';
+import { getUserIdFromLocalStorage, getRelativeTime } from '../../helpers/utils';
+import { stringToColor } from '../../helpers/render';
+
+const CATEGORY_MAP = {
+  discussion: { label: '讨论', color: 'blue' },
+  showcase: { label: '夸夸', color: 'violet' },
+  bounty: { label: '悬赏', color: 'orange' },
+};
 
 const CATEGORY_OPTIONS = [
   { key: 'discussion', label: '讨论区' },
@@ -40,14 +49,31 @@ const CATEGORY_OPTIONS = [
   { key: 'bounty', label: '悬赏区' },
 ];
 
+const toJsTime = (unixSeconds) => (unixSeconds ? unixSeconds * 1000 : 0);
+
+const getInitials = (name) => {
+  if (!name) return '??';
+  return name.slice(0, 2).toUpperCase();
+};
+
+const truncateContent = (content, maxLen = 120) => {
+  if (!content) return '';
+  if (content.length <= maxLen) return content;
+  return content.slice(0, maxLen) + '...';
+};
+
+const PAGE_SIZE = 20;
+
 const Community = () => {
+  const navigate = useNavigate();
   const [activeKey, setActiveKey] = useState('discussion');
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [posts, setPosts] = useState([]);
   const [createVisible, setCreateVisible] = useState(false);
   const [formApi, setFormApi] = useState(null);
-  const currentUserId = Number(getUserIdFromLocalStorage());
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
 
   const currentCategoryLabel = useMemo(() => {
     return (
@@ -55,22 +81,25 @@ const Community = () => {
     );
   }, [activeKey]);
 
-  const loadPosts = async (category) => {
+  const loadPosts = async (category, pageNum = 1) => {
     setLoading(true);
     try {
       const res = await API.get('/api/community/posts', {
-        params: { category },
+        params: { category, page: pageNum, page_size: PAGE_SIZE },
       });
       const { success, message, data } = res.data;
       if (!success) {
         showError(message);
         setPosts([]);
+        setTotal(0);
         return;
       }
       setPosts(data?.items || []);
+      setTotal(data?.pagination?.total || data?.items?.length || 0);
     } catch (error) {
       console.error(error);
       setPosts([]);
+      setTotal(0);
     } finally {
       setLoading(false);
     }
@@ -106,7 +135,8 @@ const Community = () => {
       Toast.success('帖子已创建');
       setCreateVisible(false);
       formApi.reset();
-      await loadPosts(activeKey);
+      setPage(1);
+      await loadPosts(activeKey, 1);
     } catch (error) {
       console.error(error);
     } finally {
@@ -114,35 +144,126 @@ const Community = () => {
     }
   };
 
+  const handleTabChange = (key) => {
+    setActiveKey(key);
+    setPage(1);
+  };
+
+  const handlePageChange = (pageNum) => {
+    setPage(pageNum);
+    loadPosts(activeKey, pageNum);
+  };
+
   useEffect(() => {
-    loadPosts(activeKey);
+    loadPosts(activeKey, 1);
   }, [activeKey]);
 
-  return (
-    <div className='w-full p-4 md:p-6'>
-      <Space vertical align='start' spacing='medium' className='w-full'>
-        <div className='w-full flex flex-col md:flex-row md:items-center md:justify-between gap-3'>
-          <div>
-            <Typography.Title heading={3} style={{ margin: 0 }}>
-              社区
-            </Typography.Title>
-            <Typography.Text type='tertiary'>
-              Phase 1：讨论区、夸夸区、悬赏区核心链路已接通。
+  const renderPostCard = (post) => {
+    const displayName = post.display_name || post.username || `User ${post.user_id}`;
+    const cat = CATEGORY_MAP[post.category] || CATEGORY_MAP.discussion;
+    const relTime = getRelativeTime(toJsTime(post.created_at));
+
+    return (
+      <Card
+        key={post.id}
+        shadows='hover'
+        className='w-full'
+        style={{ cursor: 'pointer' }}
+        onClick={() => navigate(`/community/${post.id}`)}
+      >
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {/* Top row: avatar + name + category + time */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            <Avatar
+              size='small'
+              style={{ backgroundColor: stringToColor(displayName), flexShrink: 0 }}
+            >
+              {getInitials(displayName)}
+            </Avatar>
+            <Typography.Text strong style={{ fontSize: 13 }}>
+              {displayName}
+            </Typography.Text>
+            <Tag color={cat.color} size='small'>
+              {cat.label}
+            </Tag>
+            {post.category === 'bounty' && post.reward_amount > 0 && (
+              <Tag color='orange' size='small' type='light'>
+                悬赏 {post.reward_amount}
+              </Tag>
+            )}
+            {post.category === 'bounty' && post.status === 'resolved' && (
+              <Tag color='green' size='small'>已解决</Tag>
+            )}
+            {post.category === 'bounty' && post.status === 'cancelled' && (
+              <Tag color='yellow' size='small'>已取消</Tag>
+            )}
+            {post.category === 'showcase' && (post.tip_total_amount || 0) > 0 && (
+              <Tag color='violet' size='small' type='light'>
+                已收打赏 {post.tip_total_amount}
+              </Tag>
+            )}
+            <Typography.Text type='tertiary' style={{ fontSize: 12 }}>
+              {relTime}
             </Typography.Text>
           </div>
+
+          {/* Title */}
+          <Typography.Title heading={5} style={{ margin: 0 }}>
+            {post.title}
+          </Typography.Title>
+
+          {/* Content preview */}
+          <Typography.Text type='tertiary' style={{ fontSize: 13 }}>
+            {truncateContent(post.content)}
+          </Typography.Text>
+
+          {/* Bottom row: stats */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <Typography.Text type='tertiary' style={{ fontSize: 12 }}>
+              {post.comment_count || 0} 评论
+            </Typography.Text>
+            <Typography.Text type='tertiary' style={{ fontSize: 12 }}>
+              {post.view_count || 0} 浏览
+            </Typography.Text>
+          </div>
+        </div>
+      </Card>
+    );
+  };
+
+  return (
+    <div className='w-full mt-[60px]'>
+      <Space vertical align='start' spacing='medium' className='w-full'>
+        <div className='w-full flex flex-col md:flex-row md:items-center md:justify-between gap-3'>
+          <Typography.Title heading={3} style={{ margin: 0 }}>
+            社区
+          </Typography.Title>
           <Button theme='solid' type='primary' onClick={() => setCreateVisible(true)}>
-            发帖
+            + 发帖
           </Button>
         </div>
 
         <Card className='w-full'>
-          <Tabs type='card' activeKey={activeKey} onChange={setActiveKey}>
-            {CATEGORY_OPTIONS.map((item) => (
-              <Tabs.TabPane tab={item.label} itemKey={item.key} key={item.key} />
-            ))}
-          </Tabs>
+          <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
+            {CATEGORY_OPTIONS.map((item) => {
+              const cat = CATEGORY_MAP[item.key];
+              const isActive = activeKey === item.key;
+              return (
+                <Tag
+                  key={item.key}
+                  color={isActive ? cat.color : 'grey'}
+                  size='large'
+                  type={isActive ? 'solid' : 'light'}
+                  style={{ cursor: 'pointer' }}
+                  onClick={() => handleTabChange(item.key)}
+                >
+                  {item.label}
+                </Tag>
+              );
+            })}
+          </div>
 
-          <div className='mt-4'>
+          <div>
             {loading ? (
               <div className='py-10 flex justify-center'>
                 <Spin size='large' />
@@ -151,55 +272,46 @@ const Community = () => {
               <Empty
                 image={Empty.PRESENTED_IMAGE_SIMPLE}
                 title={`暂无${currentCategoryLabel}帖子`}
-                description='现在可以发讨论、夸夸、悬赏三类帖子。'
+                description='快来发第一篇帖子吧！'
               />
             ) : (
               <Space vertical spacing='medium' className='w-full'>
-                {posts.map((post) => (
-                  <Card key={post.id} shadows='hover' className='w-full'>
-                    <Space vertical align='start' spacing='small' className='w-full'>
-                      <div className='w-full flex items-start justify-between gap-3'>
-                        <div>
-                          <Typography.Title heading={5} style={{ margin: 0 }}>
-                            <Link to={`/community/${post.id}`}>{post.title}</Link>
-                          </Typography.Title>
-                          <Typography.Text type='tertiary'>
-                            分类：{currentCategoryLabel} · 作者：
-                            {post.display_name || post.username || `User ${post.user_id}`} · 状态：
-                            {post.status || 'active'}
-                          </Typography.Text>
-                          {post.category === 'showcase' && (
-                            <Typography.Text type='tertiary'>
-                              累计打赏：{post.tip_total_amount || 0}
-                            </Typography.Text>
-                          )}
-                          {post.category === 'bounty' && (
-                            <Typography.Text type='tertiary'>
-                              悬赏额度：{post.reward_amount || 0}
-                              {Number(post.user_id) === currentUserId ? ' · 你的帖子' : ''}
-                            </Typography.Text>
-                          )}
-                        </div>
-                      </div>
-                      <Typography.Paragraph style={{ marginBottom: 0 }}>
-                        {post.content}
-                      </Typography.Paragraph>
-                    </Space>
-                  </Card>
-                ))}
+                {posts.map(renderPostCard)}
               </Space>
             )}
           </div>
+
+          {!loading && total > PAGE_SIZE && (
+            <div style={{ display: 'flex', justifyContent: 'center', marginTop: 20 }}>
+              <Pagination
+                total={total}
+                currentPage={page}
+                pageSize={PAGE_SIZE}
+                onChange={handlePageChange}
+              />
+            </div>
+          )}
         </Card>
       </Space>
 
       <Modal
         title={`发${currentCategoryLabel}帖子`}
         visible={createVisible}
-        onCancel={() => setCreateVisible(false)}
-        onOk={handleCreatePost}
-        okText='发布'
-        confirmLoading={submitting}
+        onCancel={() => {
+          setCreateVisible(false);
+          formApi?.reset();
+        }}
+        footer={
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+            <Button onClick={() => {
+              setCreateVisible(false);
+              formApi?.reset();
+            }}>取消</Button>
+            <Button type='primary' theme='solid' onClick={handleCreatePost} loading={submitting}>
+              发布
+            </Button>
+          </div>
+        }
       >
         <Form getFormApi={(api) => setFormApi(api)}>
           <Form.Input field='title' label='标题' placeholder='输入帖子标题' />

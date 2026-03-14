@@ -88,7 +88,9 @@ export const useHeaderBar = ({ onMobileMenuToggle, drawerOpen }) => {
     return false; // 默认不需要登录
   }, [headerNavModules]);
 
-  const isConsoleRoute = location.pathname.startsWith('/console');
+  const isConsoleRoute =
+    location.pathname.startsWith('/console') ||
+    location.pathname.startsWith('/community');
 
   const theme = useTheme();
   const actualTheme = useActualTheme();
