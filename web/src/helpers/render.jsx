@@ -2379,6 +2379,17 @@ export function renderQuotaWithPrompt(quota, digits) {
   return '';
 }
 
+export function renderTaskBillingProcess(other, content) {
+  if (other?.task_id != null) {
+    return renderBillingArticle([content].filter(Boolean), {
+      showReferenceNote: false,
+    });
+  }
+  return renderBillingArticle([
+    buildBillingText('任务预扣费（将在任务完成后按实际token重算）'),
+  ]);
+}
+
 export function renderClaudeModelPrice(
   inputTokens,
   completionTokens,
